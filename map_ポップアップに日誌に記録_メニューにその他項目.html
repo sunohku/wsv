@@ -70,6 +70,7 @@
             <label style="margin-left: 8px;"><input type="checkbox" id="labelToggle" checked onchange="toggleLabels(this)"> ラベル表示</label>
         </div>
         
+        <!-- ▼ ご希望の入力欄とコンボボックスを追加 -->
         <div class="control-row">
             <div class="control-group">
                 <span>日付</span>
@@ -110,19 +111,13 @@
 
             document.getElementById('global-date').value = `${year}-${month}-${day}`;
             document.getElementById('global-time').value = `${hours}:${minutes}`;
-
-            setTimeout(() => {
-                map.invalidateSize();
-            }, 100);
         });
 
         var map = L.map('map').setView([36.747, 137.016], 14);
 
-        // 地理院地図タイルを確実に最背面に配置
-        var gsiLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
+        L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
             attribution: "地理院タイル",
-            maxZoom: 18,
-            zIndex: 1
+            maxZoom: 18
         }).addTo(map);
 
         var currentMarker = null;
@@ -185,21 +180,19 @@
                         console.log("ラベル生成エラー:", e);
                     }
 
-                    // ポップアップの設定
+                    // ポップアップはスッキリシンプルに「日誌に記録」と「確認済にする」だけに
                     layer.on('click', function () {
                         let p = feature.properties || {};
                         let farmName = p.名前 || p.name || "";
-                        let tousaiNo = p.東西列No || p.tousai || "";
                         
                         let popupContent = `
-                            <b>東西列No.：</b> ${tousaiNo} <br>
                             <b>名前：</b> ${farmName} <br>
                             <b>品目：</b> <span id="val-hinmoku">${p.品目 || p.hinmoku || ""}</span> <br>
                             <b>面積：</b> ${p.面積 || p.area || ""} ㎡ (${p.面積ａ || ""}a)<br>
                             <b>完了日：</b> <span id="val-okdate">${p.okdate || "未完了"}</span> <br>
                             <b>RDflg：</b> <span id="val-rdflg">${p.RDflg || "未確認"}</span> <br><br>
                             
-                            <button class="popup-btn" style="background-color: #17a2b8;" onclick='savePopupLog(${JSON.stringify(p)})'>日誌に記録</button>
+                            <button class="popup-btn" style="background-color: #17a2b8;" onclick="savePopupLog('${farmName}')">日誌に記録</button>
                             <button class="popup-btn" style="background-color: #28a745; margin-left: 4px;" onclick="updateRecord('${layerId}')">確認済にする</button>
                         `;
                         layer.bindPopup(popupContent);
@@ -208,8 +201,6 @@
             });
 
             geojsonLayer.addTo(map);
-            gsiLayer.bringToBack();
-
             if (document.getElementById('labelToggle').checked) {
                 labelLayerGroup.addTo(map);
             }
@@ -218,7 +209,6 @@
             if (bounds.isValid()) {
                 map.fitBounds(bounds);
             }
-            map.invalidateSize();
         }
 
         function toggleLabels(checkbox) {
@@ -277,22 +267,24 @@
             return colorMap[hinmoku] || "#7f8c8d";
         }
 
-        window.savePopupLog = async function (featureProperties) {
-            const dateVal = document.getElementById('global-date').value; 
-            const timeVal = document.getElementById('global-time').value; 
-            const workName = document.getElementById('global-work-select').value; 
+        // 下部メニューで選んだ日付・時間・作業名を使ってサーバーに日誌を保存する関数
+        window.savePopupLog = async function (farmName) {
+            const dateVal = document.getElementById('global-date').value; // 例: 2026-08-29
+            const timeVal = document.getElementById('global-time').value; // 例: 17:35
+            const workName = document.getElementById('global-work-select').value; // 例: 稲刈り
 
             if (!dateVal || !timeVal) {
                 alert("日付と時間を正しく入力してください。");
                 return;
             }
 
+            // ファイル名用の年月日時 (YYYYMMDDHHMM)
             const cleanDate = dateVal.replace(/-/g, '');
             const cleanTime = timeVal.replace(/:/g, '');
             const fileName = `${cleanDate}${cleanTime}_cptn.csv`;
             
-            let tousaiNo = featureProperties.東西列No || featureProperties.tousai || featureProperties.no || "";
-            let content = `${workName},${tousaiNo}`;
+            // CSVの中身
+            let content = `時間,作業名\r\n${timeVal},${workName} (${farmName})`;
 
             try {
                 let response = await fetch('/save-log', {
@@ -302,7 +294,7 @@
                 });
                 let result = await response.json();
                 if (result.status === "success") {
-                    alert(`「${workName}, ${tousaiNo}」を日誌として保存しました！`);
+                    alert(`【${dateVal} ${timeVal}】\n「${workName} (${farmName})」を日誌に記録・保存しました！`);
                 } else {
                     alert("日誌の保存に失敗しました: " + result.message);
                 }
