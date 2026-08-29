@@ -1,0 +1,336 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リアルタイム追跡 地理院地図 (品目色分け・確認機能)</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        html, body, #map {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 20px;   /* ← 画面の下側からの距離にする */
+            left: 10px;     /* ← 左側からの距離 */
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 8px;
+            border-radius: 4px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.3);
+        }
+
+        .control-group {
+            margin-top: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+        }
+
+        .popup-btn {
+            margin-top: 8px;
+            padding: 6px 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .popup-btn:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <button onclick="startTracking()">追跡開始</button>
+        <button onclick="stopTracking()">追跡終了</button>
+        <div class="control-group">
+            <input type="checkbox" id="labelToggle" checked onchange="toggleLabels(this)">
+            <label for="labelToggle">ラベル表示</label>
+        </div>
+        <input type="file" id="fileInput" accept=".geojson,.json" style="display:none;" />
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        var map = L.map('map').setView([36.747, 137.016], 14);
+
+        L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
+            attribution: "地理院タイル",
+            maxZoom: 18
+        }).addTo(map);
+
+        var currentMarker = null;
+        var watchId = null;
+        var geojsonLayer = null;
+        var currentGeojsonObj = null; // 全データのオブジェクトを保持
+        var labelLayerGroup = L.layerGroup(); // ラベル専用のレイヤー
+
+        // 起動時にサーバーから自動で GeoJSON を読み込む
+        async function loadGeoJsonFromServer() {
+            try {
+                let response = await fetch('/品目_4326.geojson');
+                if (!response.ok) throw new Error("サーバーからファイルを取得できませんでした。");
+                
+                currentGeojsonObj = await response.json();
+                renderGeoJson(currentGeojsonObj);
+            } catch (err) {
+                console.log("自動読み込み失敗、手動選択に備えます:", err);
+            }
+        }
+
+        // 地図にGeoJSONを描画する共通関数
+        function renderGeoJson(geojson) {
+            if (geojsonLayer) {
+                map.removeLayer(geojsonLayer);
+            }
+            labelLayerGroup.clearLayers();
+
+            window.featureMap = {};
+
+            geojsonLayer = L.geoJSON(geojson, {
+                style: function (feature) {
+                    let p = feature.properties || {};
+                    let hinmoku = p.品目 || p.hinmoku || "";
+                    let isChecked = (p.RDflg === "確認済");
+
+                    let baseColor = getColorByHinmoku(hinmoku);
+                    return {
+                        color: isChecked ? "#2c3e50" : baseColor,
+                        fillColor: baseColor,
+                        fillOpacity: 0.5,
+                        weight: isChecked ? 3 : 1.5
+                    };
+                },
+                onEachFeature: function (feature, layer) {
+                    let layerId = L.stamp(layer);
+                    window.featureMap[layerId] = { feature: feature, layer: layer };
+
+                    // --- ▼ ラベル追加（文字だけ・枠なし） ▼ ---
+                    try {
+                        let p = feature.properties || {};
+                        let hinmoku = String(p.品目 || p.hinmoku || "");
+                        let labelText = (hinmoku === "1") ? "てんたかく" : "ー";
+
+                        let bounds = layer.getBounds();
+                        if (bounds && bounds.isValid()) {
+                            let center = bounds.getCenter();
+                            
+                            // 背景・枠線を一切なくし、文字色を黒、少し影をつけて地図上で読めるようにする
+                            let labelIcon = L.divIcon({
+                                className: 'polygon-label',
+                                html: `<div style="font-size:11px; font-weight:bold; color:#000; text-shadow: 1px 1px 2px #fff, -1px -1px 2px #fff, 1px -1px 2px #fff, -1px 1px 2px #fff; white-space:nowrap; text-align:center; pointer-events:none;">${labelText}</div>`,
+                                iconSize: [60, 20],
+                                iconAnchor: [30, 10]
+                            });
+                            
+                            L.marker(center, { icon: labelIcon, interactive: false }).addTo(labelLayerGroup);
+                        }
+                    } catch (e) {
+                        console.log("ラベル生成エラー:", e);
+                    }
+                    // --- ▲ ここまでラベル追加 ▲ ---
+
+                    layer.on('click', function () {
+                        let p = feature.properties || {};
+                        let popupContent = `
+                            <b>名前：</b> ${p.名前 || p.name || ""} <br>
+                            <b>品目：</b> <span id="val-hinmoku">${p.品目 || p.hinmoku || ""}</span> <br>
+                            <b>面積：</b> ${p.面積 || p.area || ""} ㎡ (${p.面積ａ || ""}a)<br>
+                            <b>完了日：</b> <span id="val-okdate">${p.okdate || "未完了"}</span> <br>
+                            <b>RDflg：</b> <span id="val-rdflg">${p.RDflg || "未確認"}</span> <br>
+                            <button class="popup-btn" onclick="updateRecord('${layerId}')">確認済にする</button>
+                        `;
+                        layer.bindPopup(popupContent);
+                    });
+                }
+            });
+
+            geojsonLayer.addTo(map);
+
+            // チェックボックスの状態に応じてラベル層を追加
+            if (document.getElementById('labelToggle').checked) {
+                labelLayerGroup.addTo(map);
+            }
+
+            const bounds = geojsonLayer.getBounds();
+            if (bounds.isValid()) {
+                map.fitBounds(bounds);
+            }
+        }
+
+        // ラベルのオン・オフを切り替える関数
+        function toggleLabels(checkbox) {
+            if (checkbox.checked) {
+                labelLayerGroup.addTo(map);
+            } else {
+                map.removeLayer(labelLayerGroup);
+            }
+        }
+
+        // ページ読み込み時に自動取得を実行
+        loadGeoJsonFromServer();
+
+        function startTracking() {
+            if (!navigator.geolocation) {
+                alert("この端末は位置情報取得に対応していません。");
+                return;
+            }
+
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+
+            watchId = navigator.geolocation.watchPosition(
+                function (position) {
+                    var lat = position.coords.latitude;
+                    var lng = position.coords.longitude;
+
+                    if (!currentMarker) {
+                        currentMarker = L.marker([lat, lng]).addTo(map)
+                            .bindPopup("現在地")
+                            .openPopup();
+                    } else {
+                        currentMarker.setLatLng([lat, lng]);
+                    }
+
+                    map.setView([lat, lng], 16);
+                },
+                function (error) {
+                    alert("位置情報の取得に失敗しました: " + error.message);
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 0,
+                    timeout: 10000
+                }
+            );
+        }
+
+        function stopTracking() {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                alert("追跡を終了しました。");
+                currentMarker = null;
+            }
+        }
+
+        function getColorByHinmoku(hinmoku) {
+            if (!hinmoku) return "#808080";
+
+            const colorMap = {
+                "1": "#2ecc71",
+                "2": "#f1c40f",
+                "4": "#e67e22",
+                "7": "#9b59b6",
+                "14": "#e74c3c",
+                "23": "#e84393",
+                "83": "#1abc9c",
+                "花き": "#3498db",
+                "放牧地": "#d35400",
+                "その他": "#7f8c8d"
+            };
+
+            if (colorMap[hinmoku]) {
+                return colorMap[hinmoku];
+            } else {
+                let hash = 0;
+                let str = String(hinmoku);
+                for (let i = 0; i < str.length; i++) {
+                    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                }
+                let color = '#';
+                for (let i = 0; i < 3; i++) {
+                    let value = (hash >> (i * 8)) & 0xFF;
+                    value = Math.floor(value * 0.5) + 100;
+                    color += ('00' + value.toString(16)).slice(-2);
+                }
+                return color;
+            }
+        }
+
+        // 手動ファイル選択用のフォールバック（隠しファイル選択用）
+        document.getElementById('fileInput')
+            .addEventListener('change', async function (evt) {
+                try {
+                    const files = evt.target.files;
+                    if (files.length === 0) return;
+                    const targetFile = files[0];
+                    const text = await targetFile.text();
+                    currentGeojsonObj = JSON.parse(text);
+                    renderGeoJson(currentGeojsonObj);
+                } catch (err) {
+                    console.error("GeoJSON読込エラー:", err);
+                }
+            });
+
+        // 「確認済にする」ボタンが押されたときの処理 ＋ サーバーへの自動保存
+        window.updateRecord = async function (layerId) {
+            let item = window.featureMap[layerId];
+            if (!item) return;
+
+            let p = item.feature.properties;
+            let hinmoku = p.品目 || p.hinmoku || "";
+
+            let now = new Date();
+            let year = now.getFullYear();
+            let month = String(now.getMonth() + 1).padStart(2, '0');
+            let day = String(now.getDate()).padStart(2, '0');
+            let hours = String(now.getHours()).padStart(2, '0');
+            let minutes = String(now.getMinutes()).padStart(2, '0');
+            let seconds = String(now.getSeconds()).padStart(2, '0');
+            let timeStr = `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
+
+            p.RDflg = "確認済";
+            p.okdate = timeStr;
+
+            let baseColor = getColorByHinmoku(hinmoku);
+            item.layer.setStyle({
+                color: "#2c3e50",
+                fillColor: baseColor,
+                weight: 3
+            });
+
+            item.layer.closePopup();
+            item.layer.openPopup();
+
+            if (currentGeojsonObj) {
+                try {
+                    let response = await fetch('/save', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(currentGeojsonObj)
+                    });
+                    let result = await response.json();
+                    if (result.status === "success") {
+                        alert("確認済みに更新し、サーバーに保存しました！");
+                    } else {
+                        alert("保存に失敗しました: " + result.message);
+                    }
+                } catch (e) {
+                    alert("サーバーとの通信に失敗しました: " + e.message);
+                }
+            } else {
+                alert("確認済みに更新しました！");
+            }
+        };
+    </script>
+</body>
+</html>
