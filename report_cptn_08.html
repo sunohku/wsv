@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>簡易作業日誌 (cptn)</title>
+</head>
+<body style="font-family: sans-serif; margin: 20px;">
+
+  <!-- タイトル・作業月・担当者エリア -->
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; background: #f1f3f5; padding: 10px 15px; border-radius: 5px;">
+    <h2 style="margin: 0;">簡易・作業日誌</h2>
+    <div style="display: flex; gap: 15px; align-items: center;">
+      <div>
+        <span style="font-size: 14px; color: #555; margin-right: 5px;">作業月:</span>
+        <select id="selectMonth" onchange="updateWorkList()" style="padding: 4px;">
+          <option value="1月">1月</option>
+          <option value="2月">2月</option>
+          <option value="3月">3月</option>
+          <option value="4月">4月</option>
+          <option value="5月">5月</option>
+          <option value="6月">6月</option>
+          <option value="7月">7月</option>
+          <option value="8月">8月</option>
+          <option value="9月" selected>9月</option>
+          <option value="10月">10月</option>
+          <option value="11月">11月</option>
+          <option value="12月">12月</option>
+        </select>
+      </div>
+      <div>
+        <span style="font-size: 14px; color: #555; margin-right: 5px;">担当者:</span>
+        <input type="text" id="inputStaff" value="cptn" readonly style="width: 60px; padding: 4px; background: #e9ecef; border: 1px solid #ccc;">
+      </div>
+    </div>
+  </div>
+
+  <!-- 入力フォームエリア -->
+  <div style="margin-bottom: 20px; background: #f9f9f9; padding: 15px; border-radius: 5px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+    <div>
+      <label style="font-size: 13px; color: #555; display: block;">日付</label>
+      <input type="date" id="inputDate" style="padding: 4px;">
+    </div>
+    
+    <div>
+      <label style="font-size: 13px; color: #555; display: block;">時間</label>
+      <input type="text" id="inputTime" style="width: 70px; padding: 4px;">
+    </div>
+
+    <!-- 作業名コンボボックス -->
+    <div>
+      <label style="font-size: 13px; color: #555; display: block;">作業名</label>
+      <select id="inputWork" style="padding: 5px; min-width: 120px;">
+        <!-- monthly_jobs.csv から動的に読み込まれます -->
+      </select>
+    </div>
+
+    <div style="align-self: flex-end;">
+      <button onclick="addLogAndSaveCSV()" style="padding: 6px 15px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">追加・自動サーバー保存</button>
+    </div>
+  </div>
+
+  <!-- 一覧表 -->
+  <table border="1" style="width: 100%; border-collapse: collapse; text-align: left;">
+    <thead>
+      <tr style="background: #e9ecef;">
+        <th style="padding: 8px; width: 25%;">時間</th>
+        <th style="padding: 8px; width: 75%;">作業名</th>
+      </tr>
+    </thead>
+    <tbody id="logTableBody">
+      <!-- ログが追加される場所 -->
+    </tbody>
+  </table>
+
+  <script>
+    let workMasterData = {};
+
+    window.onload = async function() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      document.getElementById('inputDate').value = `${year}-${month}-${day}`;
+
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      document.getElementById('inputTime').value = `${hours}:${minutes}`;
+
+      await loadMonthlyJobsCSV();
+      updateWorkList();
+    };
+
+    async function loadMonthlyJobsCSV() {
+      try {
+        const response = await fetch('monthly_jobs.csv');
+        if (!response.ok) {
+          throw new Error('monthly_jobs.csv が見つからないか、読み込めません。');
+        }
+        const text = await response.text();
+        const lines = text.split(/\r\n|\n/);
+        workMasterData = {};
+
+        lines.forEach(line => {
+          if (!line.trim()) return;
+          const cols = line.split(',');
+          const monthKey = cols[0].trim();
+          const jobs = cols.slice(1).map(j => j.trim()).filter(j => j !== "");
+          if (monthKey) {
+            workMasterData[monthKey] = jobs;
+          }
+        });
+      } catch (error) {
+        console.warn("CSV読み込みエラー:", error);
+        workMasterData = {
+          "3月": ["土づくり", "畔塗り", "荒耕し", "荒くれ", "見回り", "その他"],
+          "8月": ["稲刈り", "見回り", "その他"],
+          "9月": ["稲刈り", "秋作業見回り", "その他"]
+        };
+      }
+    }
+
+    function updateWorkList() {
+      const selectedMonth = document.getElementById('selectMonth').value;
+      const workSelect = document.getElementById('inputWork');
+      workSelect.innerHTML = "";
+
+      const jobs = workMasterData[selectedMonth] || ["その他"];
+
+      jobs.forEach(job => {
+        const option = document.createElement('option');
+        option.value = job;
+        option.innerText = job;
+        workSelect.appendChild(option);
+      });
+    }
+
+    // ★ ダイアログを出さず、裏でサーバーに送信して自動保存する処理
+    async function addLogAndSaveCSV() {
+      const date = document.getElementById('inputDate').value;
+      const time = document.getElementById('inputTime').value;
+      const work = document.getElementById('inputWork').value;
+      const staff = document.getElementById('inputStaff').value;
+
+      if (!date || !work) {
+        alert("日付と作業名は必須です！");
+        return;
+      }
+
+      // ファイル名の生成 (例: 202608291632_cptn.csv)
+      const cleanDate = date.replace(/-/g, '');
+      const cleanTime = time.replace(/:/g, '');
+      const fileName = `${cleanDate}${cleanTime}_${staff}.csv`;
+
+      // ご要望通り：ヘッダーなし、ダブルクォーテーションなし、作業名のみ（BOM付き）
+      const csvContent = "\uFEFF" + work;
+
+      try {
+        // サーバーの保存用APIへPOST送信
+        const response = await fetch('/save-log', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            fileName: fileName,
+            content: csvContent
+          })
+        });
+
+        const result = await response.json();
+
+        if (result.status === "success") {
+          // 画面の表に追加
+          const tbody = document.getElementById('logTableBody');
+          const row = tbody.insertRow();
+          row.insertCell(0).innerText = time;
+          row.insertCell(1).innerText = work;
+          
+          console.log("サーバーに自動保存されました: " + fileName);
+        } else {
+          alert("サーバーでの保存に失敗しました: " + result.message);
+        }
+      } catch (e) {
+        alert("サーバーとの通信に失敗しました: " + e.message);
+      }
+    }
+  </script>
+
+</body>
+</html>

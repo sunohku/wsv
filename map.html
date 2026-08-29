@@ -129,7 +129,6 @@
                         if (bounds && bounds.isValid()) {
                             let center = bounds.getCenter();
                             
-                            // 背景・枠線を一切なくし、文字色を黒、少し影をつけて地図上で読めるようにする
                             let labelIcon = L.divIcon({
                                 className: 'polygon-label',
                                 html: `<div style="font-size:11px; font-weight:bold; color:#000; text-shadow: 1px 1px 2px #fff, -1px -1px 2px #fff, 1px -1px 2px #fff, -1px 1px 2px #fff; white-space:nowrap; text-align:center; pointer-events:none;">${labelText}</div>`,
@@ -146,13 +145,28 @@
 
                     layer.on('click', function () {
                         let p = feature.properties || {};
+                        let farmName = p.名前 || p.name || "";
+                        
                         let popupContent = `
-                            <b>名前：</b> ${p.名前 || p.name || ""} <br>
+                            <b>名前：</b> ${farmName} <br>
                             <b>品目：</b> <span id="val-hinmoku">${p.品目 || p.hinmoku || ""}</span> <br>
                             <b>面積：</b> ${p.面積 || p.area || ""} ㎡ (${p.面積ａ || ""}a)<br>
                             <b>完了日：</b> <span id="val-okdate">${p.okdate || "未完了"}</span> <br>
-                            <b>RDflg：</b> <span id="val-rdflg">${p.RDflg || "未確認"}</span> <br>
-                            <button class="popup-btn" onclick="updateRecord('${layerId}')">確認済にする</button>
+                            <b>RDflg：</b> <span id="val-rdflg">${p.RDflg || "未確認"}</span> <br><br>
+                            
+                            <!-- ▼ コンボボックスと日誌記録ボタンを追加 -->
+                            <div style="margin-bottom: 6px;">
+                                <label style="font-size: 13px; font-weight: bold;">作業名：</label>
+                                <select id="popup-work-select-${layerId}" style="padding: 3px; font-size: 13px;">
+                                    <option value="稲刈り">稲刈り</option>
+                                    <option value="種まき">種まき</option>
+                                    <option value="施肥">施肥</option>
+                                    <option value="農薬散布">農薬散布</option>
+                                    <option value="見回り">見回り</option>
+                                </select>
+                            </div>
+                            <button class="popup-btn" style="background-color: #17a2b8;" onclick="savePopupLog('${farmName}', '${layerId}')">日誌に記録</button>
+                            <button class="popup-btn" style="background-color: #28a745; margin-left: 4px;" onclick="updateRecord('${layerId}')">確認済にする</button>
                         `;
                         layer.bindPopup(popupContent);
                     });
@@ -161,7 +175,6 @@
 
             geojsonLayer.addTo(map);
 
-            // チェックボックスの状態に応じてラベル層を追加
             if (document.getElementById('labelToggle').checked) {
                 labelLayerGroup.addTo(map);
             }
@@ -278,6 +291,43 @@
                     console.error("GeoJSON読込エラー:", err);
                 }
             });
+
+        // ポップアップから作業日誌をサーバーに自動保存する関数
+        window.savePopupLog = async function (farmName, layerId) {
+            const selectElem = document.getElementById(`popup-work-select-${layerId}`);
+            if (!selectElem) return;
+            const workName = selectElem.value;
+
+            let now = new Date();
+            let year = now.getFullYear();
+            let month = String(now.getMonth() + 1).padStart(2, '0');
+            let day = String(now.getDate()).padStart(2, '0');
+            let hours = String(now.getHours()).padStart(2, '0');
+            let minutes = String(now.getMinutes()).padStart(2, '0');
+            let seconds = String(now.getSeconds()).padStart(2, '0');
+            
+            let timeStr = `${hours}:${minutes}`;
+            let fileName = `${year}${month}${day}${hours}${minutes}_cptn.csv`;
+            
+            // CSVファイルの中身（作業日誌と同じ形式）
+            let content = `時間,作業名\r\n${timeStr},${workName} (${farmName})`;
+
+            try {
+                let response = await fetch('/save-log', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fileName: fileName, content: content })
+                });
+                let result = await response.json();
+                if (result.status === "success") {
+                    alert(`「${workName} (${farmName})」を日誌に記録・保存しました！`);
+                } else {
+                    alert("日誌の保存に失敗しました: " + result.message);
+                }
+            } catch (e) {
+                alert("サーバーとの通信に失敗しました: " + e.message);
+            }
+        };
 
         // 「確認済にする」ボタンが押されたときの処理 ＋ サーバーへの自動保存
         window.updateRecord = async function (layerId) {
