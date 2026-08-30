@@ -79,14 +79,28 @@
                 <span>時間</span>
                 <input type="time" id="global-time">
             </div>
+            <!-- 作業月のセレクトボックスを追加 -->
+            <div class="control-group">
+                <span>作業月</span>
+                <select id="selectMonth" onchange="updateWorkList()" style="padding: 4px;">
+                    <option value="1月">1月</option>
+                    <option value="2月">2月</option>
+                    <option value="3月">3月</option>
+                    <option value="4月">4月</option>
+                    <option value="5月">5月</option>
+                    <option value="6月">6月</option>
+                    <option value="7月">7月</option>
+                    <option value="8月">8月</option>
+                    <option value="9月" selected>9月</option>
+                    <option value="10月">10月</option>
+                    <option value="11月">11月</option>
+                    <option value="12月">12月</option>
+                </select>
+            </div>
             <div class="control-group">
                 <span>作業名</span>
-                <select id="global-work-select">
-                    <option value="稲刈り">稲刈り</option>
-                    <option value="種まき">種まき</option>
-                    <option value="施肥">施肥</option>
-                    <option value="農薬散布">農薬散布</option>
-                    <option value="見回り">見回り</option>
+                <select id="global-work-select" style="padding: 5px; min-width: 100px;">
+                    <!-- monthly_jobs.csv から動的に読み込まれます -->
                 </select>
             </div>
         </div>
@@ -99,8 +113,10 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        // ページ読み込み時に日付と時間に現在の値を自動セット
-        window.addEventListener('DOMContentLoaded', () => {
+        let workMasterData = {};
+
+        // ページ読み込み時に日付と時間に現在の値を自動セット、およびCSV読み込み
+        window.addEventListener('DOMContentLoaded', async () => {
             const now = new Date();
             const year = now.getFullYear();
             const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -111,10 +127,61 @@
             document.getElementById('global-date').value = `${year}-${month}-${day}`;
             document.getElementById('global-time').value = `${hours}:${minutes}`;
 
+            // 現在の月に合わせた初期選択（例: 9月）にする場合の処理も可能ですが、HTML側で selected を9月にしています
+
+            await loadMonthlyJobsCSV();
+            updateWorkList();
+
             setTimeout(() => {
                 map.invalidateSize();
             }, 100);
         });
+
+        // monthly_jobs.csv を読み込む関数
+        async function loadMonthlyJobsCSV() {
+            try {
+                const response = await fetch('monthly_jobs.csv');
+                if (!response.ok) {
+                    throw new Error('monthly_jobs.csv が見つからないか、読み込めません。');
+                }
+                const text = await response.text();
+                const lines = text.split(/\r\n|\n/);
+                workMasterData = {};
+
+                lines.forEach(line => {
+                    if (!line.trim()) return;
+                    const cols = line.split(',');
+                    const monthKey = cols[0].trim();
+                    const jobs = cols.slice(1).map(j => j.trim()).filter(j => j !== "");
+                    if (monthKey) {
+                        workMasterData[monthKey] = jobs;
+                    }
+                });
+            } catch (error) {
+                console.warn("CSV読み込みエラー:", error);
+                workMasterData = {
+                    "3月": ["土づくり", "畔塗り", "荒耕し", "荒くれ", "見回り", "その他"],
+                    "8月": ["稲刈り", "見回り", "その他"],
+                    "9月": ["稲刈り", "秋作業見回り", "その他"]
+                };
+            }
+        }
+
+        // 作業月の変更に応じて作業名のセレクトボックスを更新する関数
+        function updateWorkList() {
+            const selectedMonth = document.getElementById('selectMonth').value;
+            const workSelect = document.getElementById('global-work-select');
+            workSelect.innerHTML = "";
+
+            const jobs = workMasterData[selectedMonth] || ["その他"];
+
+            jobs.forEach(job => {
+                const option = document.createElement('option');
+                option.value = job;
+                option.innerText = job;
+                workSelect.appendChild(option);
+            });
+        }
 
         var map = L.map('map').setView([36.747, 137.016], 14);
 
