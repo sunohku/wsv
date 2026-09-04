@@ -1,0 +1,293 @@
+{
+  "type": "FeatureCollection",
+  "name": "品目_4326_抽出",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西B8",
+        "名前": "川岸弘明"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西B7",
+        "名前": "川岸弘明"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西B6",
+        "名前": "川岸弘明"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西A12",
+        "名前": "川岸弘明"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西C9",
+        "名前": "川岸弘明"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西C8",
+        "名前": "川岸弘明"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西C7",
+        "名前": "川岸弘明"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西A9",
+        "名前": "川岸弘明"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西A10",
+        "名前": "川岸弘明"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西A5",
+        "名前": "押川宗成"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西A2",
+        "名前": "押川竹弘"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西B1",
+        "名前": "押川竹弘"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西B2",
+        "名前": "山本信治"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西B3",
+        "名前": "山本信治"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "東G2",
+        "名前": "押川竹弘"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "東G3",
+        "名前": "押川宗成"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "東F1",
+        "名前": "山本亮二"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "東F21",
+        "名前": "山本亮二"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西D4",
+        "名前": "山本信治"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西D3",
+        "名前": "山本信治"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西D2",
+        "名前": "山本信治"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西D34",
+        "名前": "モリタ"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西E43",
+        "名前": "川岸弘明"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西F43",
+        "名前": "川岸弘明"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西F38",
+        "名前": "モリタ"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西F31",
+        "名前": "モリタ"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西D8",
+        "名前": "川岸弘明"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西D9",
+        "名前": "川岸弘明"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西D21",
+        "名前": "川岸弘明"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西D25",
+        "名前": "川岸豊"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西C24",
+        "名前": "星野修"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西C23",
+        "名前": "星野修"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西C22",
+        "名前": "星野修"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西C10",
+        "名前": "星野修"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西B11",
+        "名前": "星野修"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西B22",
+        "名前": "川岸豊"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西B23",
+        "名前": "川岸豊"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西B24",
+        "名前": "星野修"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西B26",
+        "名前": "松井宏道"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西A26",
+        "名前": "松井宏道"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "東西列No": "西A25",
+        "名前": "松井宏道"
+      }
+    }
+  ]
+}

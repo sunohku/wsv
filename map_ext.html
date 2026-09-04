@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リアルタイム追跡 地理院地図 (複数選択・メンテナンス対応)</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- QRコード生成用のライブラリを読み込み -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+
+
+        /* 背景の地理院地図をモノクロにする */
+        /* (※コントラストを少し上げると、道路や建物が見やすくなります) */
+        /*leaflet-tile-pane {
+            filter: grayscale(100%) contrast(110%);
+        }*/
+
+
+        html, body, #map {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* ==========================================
+        // 【デザイン設定：操作パネル全体】
+        // 画面の左下にある、ボタンや日付・作業名を選ぶ操作パネル全体の枠組みや位置を整えています。
+        // ========================================== */
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 10px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 10px;
+            border-radius: 6px;
+            box-shadow: 0 0 8px rgba(0,0,0,0.3);
+            font-size: 13px;
+        }
+
+        /* ==========================================
+        // 【デザイン設定：操作パネルの行（横並び）】
+        // パネル内の項目（日付や作業名など）を横一列にきれいに並べるための設定です。
+        // ========================================== */
+        .control-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 6px;
+            align-items: center;
+        }
+
+        /* ==========================================
+        // 【デザイン設定：入力項目グループ（縦並び）】
+        // 「日付」や「作業名」といった文字ラベルと、その入力欄をセットにして縦に並べる設定です。
+        // ========================================== */
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .control-group input, .control-group select {
+            padding: 4px;
+            font-size: 13px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .action-btn {
+            padding: 6px 12px;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+        }
+
+        .action-btn:hover {
+            opacity: 0.85;
+        }
+
+        /* 画面右上にQRコードを表示するボックス */
+        #qr-box {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            box-shadow: 0 0 8px rgba(0,0,0,0.3);
+            text-align: center;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        #qrcode {
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 画面右上にスマホアクセス用のQRコードを表示 -->
+    <div id="qr-box">
+        <span>スマホでアクセス</span>
+        <div id="qrcode"></div>
+    </div>
+
+    <div id="controls">
+        <div>
+            <button onclick="startTracking()">追跡開始</button>
+            <button onclick="stopTracking()">追跡終了</button>
+            <label style="margin-left: 8px;"><input type="checkbox" id="labelToggle" checked onchange="toggleLabels(this)"> ラベル表示</label>
+            <select id="labelFieldSelect" onchange="updateLabels()" style="margin-left: 4px; padding: 2px; font-size: 12px;">
+                <option value="">(項目を選択)</option>
+            </select>
+        </div>
+        
+        <div class="control-row">
+            <div class="control-group">
+                <span>日付</span>
+                <input type="date" id="global-date">
+            </div>
+            <div class="control-group">
+                <span>時間</span>
+                <input type="time" id="global-time">
+            </div>
+            <div class="control-group">
+                <span>作業月</span>
+                <select id="selectMonth" onchange="updateWorkList()" style="padding: 4px;">
+                    <option value="1月">1月</option>
+                    <option value="2月">2月</option>
+                    <option value="3月">3月</option>
+                    <option value="4月">4月</option>
+                    <option value="5月">5月</option>
+                    <option value="6月">6月</option>
+                    <option value="7月">7月</option>
+                    <option value="8月">8月</option>
+                    <option value="9月" selected>9月</option>
+                    <option value="10月">10月</option>
+                    <option value="11月">11月</option>
+                    <option value="12月">12月</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <span>作業名</span>
+                <select id="global-work-select" style="padding: 5px; min-width: 100px;">
+                    <!-- monthly_jobs.csv から動的に読み込まれます -->
+                </select>
+            </div>
+            <div class="control-group" style="justify-content: flex-end;">
+                <span>&nbsp;</span>
+                <button class="action-btn" style="background-color: #e74c3c;" onclick="clearSelection()">選択解除</button>
+            </div>
+        </div>
+
+        <input type="file" id="fileInput" accept=".geojson,.json" style="display:none;" />
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // ==========================================
+        // 【大元の定義・変数の準備】
+        // アプリ全体で共有して使うデータを一時的に入れておく「箱（変数）」をここで最初に用意しています。
+        // ==========================================
+        let workMasterData = {}; // CSVから読み込んだ「月ごとの作業名リスト」をしまっておく箱
+        let selectedFields = []; // 地図上で「今クリックして選ばれている区画のデータ」をためておく箱
+
+        // ==========================================
+        // 【初期化処理】ページ読み込み完了時に自動実行されます
+        // ==========================================
+        window.addEventListener('DOMContentLoaded', async () => {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+
+            document.getElementById('global-date').value = `${year}-${month}-${day}`;
+            document.getElementById('global-time').value = `${hours}:${minutes}`;
+
+            // 画面右上に、現在開いているページのURLのQRコードを自動生成する
+            new QRCode(document.getElementById("qrcode"), {
+                text: window.location.href,
+                width: 100,
+                height: 100,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+
+            await loadMonthlyJobsCSV();
+            updateWorkList();
+
+            setTimeout(() => {
+                map.invalidateSize();
+            }, 100);
+        });
+
+        // ==========================================
+        // 【CSV読み込み】月ごとの作業マスターデータを読み込む処理
+        // ==========================================
+        async function loadMonthlyJobsCSV() {
+            try {
+                const response = await fetch('monthly_jobs.csv');
+                if (!response.ok) throw new Error('monthly_jobs.csv が見つかりません。');
+                const text = await response.text();
+                const lines = text.split(/\r\n|\n/);
+                workMasterData = {};
+
+                lines.forEach(line => {
+                    if (!line.trim()) return;
+                    const cols = line.split(',');
+                    const monthKey = cols[0].trim();
+                    const jobs = cols.slice(1).map(j => j.trim()).filter(j => j !== "");
+                    if (monthKey) workMasterData[monthKey] = jobs;
+                });
+            } catch (error) {
+                console.warn("CSV読み込みエラー:", error);
+                workMasterData = {
+                    "3月": ["土づくり", "畔塗り", "荒耕し", "見回り", "その他"],
+                    "8月": ["稲刈り", "見回り", "その他"],
+                    "9月": ["稲刈り", "秋作業見回り", "その他"]
+                };
+            }
+        }
+
+        // ==========================================
+        // 【作業リスト更新】選ばれた月に応じて作業名の選択肢を切り替える処理
+        // ==========================================
+        function updateWorkList() {
+            const selectedMonth = document.getElementById('selectMonth').value;
+            const workSelect = document.getElementById('global-work-select');
+            workSelect.innerHTML = "";
+            const jobs = workMasterData[selectedMonth] || ["その他"];
+
+            jobs.forEach(job => {
+                const option = document.createElement('option');
+                option.value = job;
+                option.innerText = job;
+                workSelect.appendChild(option);
+            });
+        }
+
+        var map = L.map('map').setView([36.747, 137.016], 14);
+
+
+
+        // 標準地図のレイヤーを追加
+        //var gsiLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
+        //    attribution: "地理院タイル",
+        //    maxZoom: 18,
+        //    zIndex: 1
+        //}).addTo(map);
+
+        // 淡色地図のレイヤーを追加
+        //var gsiLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', {
+        //    attribution: "地理院タイル（淡色）",
+        //    maxZoom: 18,
+        //    zIndex: 1
+        //}).addTo(map);
+
+
+        // 航空写真（オルソ画像）にする場合
+            var gsiLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
+            attribution: "地理院タイル（航空写真）",
+            maxZoom: 18,
+            zIndex: 1
+        }).addTo(map);
+
+
+
+
+
+        var currentMarker = null;
+        var watchId = null;
+        var geojsonLayer = null;
+        var currentGeojsonObj = null;
+        var labelLayerGroup = L.layerGroup();
+
+        // ==========================================
+        // 【GeoJSON読み込み】サーバーからポリゴンデータ(geojson)を取得する処理
+        // ==========================================
+        async function loadGeoJsonFromServer() {
+            try {
+                let response = await fetch('品目_4326.geojson');
+                if (!response.ok) throw new Error("サーバーからファイルを取得できませんでした。");
+                currentGeojsonObj = await response.json();
+                
+                populateLabelFields(currentGeojsonObj);
+                renderGeoJson(currentGeojsonObj);
+            } catch (err) {
+                console.log("自動読み込み失敗:", err);
+            }
+        }
+
+        // ==========================================
+        // 【ラベル項目設定】地図上に表示する項目の選択肢を組み立てる処理
+        // ==========================================
+        function populateLabelFields(geojson) {
+            const select = document.getElementById('labelFieldSelect');
+            select.innerHTML = "";
+            
+            let keysSet = new Set();
+            if (geojson && geojson.features) {
+                geojson.features.forEach(f => {
+                    if (f.properties) {
+                        Object.keys(f.properties).forEach(k => keysSet.add(k));
+                    }
+                });
+            }
+
+            keysSet.forEach(key => {
+                let opt = document.createElement('option');
+                opt.value = key;
+                opt.innerText = key;
+                select.appendChild(opt);
+            });
+
+            if (keysSet.has("東西列No")) {
+                select.value = "東西列No";
+            } else if (keysSet.has("name")) {
+                select.value = "name";
+            } else if (keysSet.has("hinmoku")) {
+                select.value = "hinmoku";
+            }
+        }
+
+        // ==========================================
+        // 【GeoJSON描画】取得したポリゴンデータを地図上に色分けして表示する処理
+        // ==========================================
+        function renderGeoJson(geojson) {
+            if (geojsonLayer) map.removeLayer(geojsonLayer);
+            window.featureMap = {};
+
+            geojsonLayer = L.geoJSON(geojson, {
+                style: function (feature) {
+                    let p = feature.properties || {};
+                    let hinmoku = p.hinmoku || p.品種名 || p.品目 || p.CD || "";
+                    let baseColor = getColorByHinmoku(hinmoku);
+                    return {
+                        color: baseColor,
+                        fillColor: baseColor,
+                        fillOpacity: 0.6,
+                        weight: 1.5
+                    };
+                },
+                onEachFeature: function (feature, layer) {
+                    let layerId = L.stamp(layer);
+                    window.featureMap[layerId] = { feature: feature, layer: layer, isSelected: false };
+
+                    layer.on('click', function () {
+                        let item = window.featureMap[layerId];
+                        item.isSelected = !item.isSelected;
+
+                        let p = feature.properties;
+
+                        if (item.isSelected) {
+                            layer.setStyle({
+                                color: '#e74c3c',
+                                fillColor: '#e74c3c',
+                                fillOpacity: 0.7,
+                                weight: 3
+                            });
+                            selectedFields.push(p);
+                        } else {
+                            let hinmoku = p.hinmoku || p.品種名 || p.品目 || p.CD || "";
+                            let baseColor = getColorByHinmoku(hinmoku);
+                            layer.setStyle({
+                                color: baseColor,
+                                fillColor: baseColor,
+                                fillOpacity: 0.6,
+                                weight: 1.5
+                            });
+                            selectedFields = selectedFields.filter(f => JSON.stringify(f) !== JSON.stringify(p));
+                        }
+
+                        copySelectedValuesToClipboard();
+                    });
+                }
+            });
+
+            geojsonLayer.addTo(map);
+            gsiLayer.bringToBack();
+            updateLabels();
+
+            const bounds = geojsonLayer.getBounds();
+            if (bounds.isValid()) {
+                map.fitBounds(bounds);
+            }
+            map.invalidateSize();
+        }
+
+
+        // ==========================================
+        // 【色判定】品種名に応じてポリゴンの色を決める処理
+        // ==========================================
+        function getColorByHinmoku(hinmoku) {
+            if (!hinmoku) return "#e0e0e0"; // 未定やデータなしは薄いグレー
+            
+            let val = String(hinmoku).trim();
+
+            const colorMap = {
+                "てんたかく": "#64b5f6",
+                "てんたかく:直播 鉄コ": "#42a5f5",
+                "1": "#64b5f6",
+
+                "コシヒカリ": "#8bc34a",
+                "コシヒカリ:直播 V溝": "#7cb342",
+                "コシヒカリ:直播 鉄コ": "#689f38",
+                "コシヒカリ:アルギ": "#d1c4e9",
+                "2": "#8bc34a",
+                "7": "#d1c4e9",
+
+                "富富富": "#e040fb",
+                "富富": "#e040fb",
+                "4": "#e040fb",
+
+                "やまだわら": "#f8bbd0",
+                "やまだわら:飼料": "#f48fb1",
+                "83": "#f8bbd0",
+
+                "砂利採取": "#9e9e9e",
+                "鉄コ": "#78909c",
+                "V溝": "#5c6bc0",
+                "9": "#9e9e9e",
+                "14": "#78909c",
+                "23": "#5c6bc0",
+
+                "畑など": "#f44336",
+                "大麦・大豆": "#ffeb3b",
+                "未定": "#f1f8e9"
+            };
+
+            if (colorMap[val]) {
+                return colorMap[val];
+            }
+
+            if (val.includes("てんたかく")) return "#64b5f6";
+            if (val.includes("コシヒカリ")) return "#8bc34a";
+            if (val.includes("富富富") || val.includes("窗窗")) return "#e040fb";
+            if (val.includes("アルギ")) return "#d1c4e9";
+            if (val.includes("やまだわら")) return "#f8bbd0";
+            if (val.includes("砂利")) return "#9e9e9e";
+            if (val.includes("畑")) return "#f44336";
+            if (val.includes("大麦") || val.includes("大豆")) return "#ffeb3b";
+
+            return "#b0bec5";
+        }
+
+
+
+        // ==========================================
+        // 【クリップボードコピー】選択された区画の情報をコピーする処理
+        // ==========================================
+        function copySelectedValuesToClipboard() {
+            const selectedKey = document.getElementById('labelFieldSelect').value;
+            if (!selectedKey) return;
+
+            let values = selectedFields.map(p => {
+                return p[selectedKey] !== undefined && p[selectedKey] !== null ? String(p[selectedKey]) : "";
+            }).filter(v => v !== "");
+
+            let resultText = values.join(", ");
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(resultText).then(() => {
+                    console.log("クリップボードにコピーしました:", resultText);
+                }).catch(err => {
+                    console.error("クリップボードコピー失敗:", err);
+                });
+            }
+        }
+
+        // ==========================================
+        // 【ラベル更新】地図上のポリゴンに文字（ラベル）を表示・更新する処理
+        // ==========================================
+        function updateLabels() {
+            labelLayerGroup.clearLayers();
+
+            if (!document.getElementById('labelToggle').checked || !currentGeojsonObj) {
+                map.removeLayer(labelLayerGroup);
+                return;
+            }
+
+            const selectedKey = document.getElementById('labelFieldSelect').value;
+
+            if (currentGeojsonObj && currentGeojsonObj.features) {
+                currentGeojsonObj.features.forEach(feature => {
+                    try {
+                        let p = feature.properties || {};
+                        let labelText = selectedKey ? String(p[selectedKey] !== undefined ? p[selectedKey] : "") : "";
+                        
+                        let tempLayer = L.geoJSON(feature);
+                        let bounds = tempLayer.getBounds();
+                        if (bounds && bounds.isValid()) {
+                            let center = bounds.getCenter();
+                            let labelIcon = L.divIcon({
+                                className: 'polygon-label',
+                                html: `<div style="font-size:11px; font-weight:bold; color:#000; text-shadow: 1px 1px 2px #fff, -1px -1px 2px #fff, 1px -1px 2px #fff, -1px 1px 2px #fff; white-space:nowrap; text-align:center; pointer-events:none;">${labelText}</div>`,
+                                iconSize: [60, 20],
+                                iconAnchor: [30, 10]
+                            });
+                            L.marker(center, { icon: labelIcon, interactive: false }).addTo(labelLayerGroup);
+                        }
+                    } catch (e) {
+                        console.log("ラベル生成エラー:", e);
+                    }
+                });
+            }
+
+            labelLayerGroup.addTo(map);
+        }
+
+        // ==========================================
+        // 【選択解除】地図上で選択されたすべての区画のハイライトを元に戻す処理
+        // ==========================================
+        function clearSelection() {
+            if (window.featureMap) {
+                Object.keys(window.featureMap).forEach(layerId => {
+                    let item = window.featureMap[layerId];
+                    if (item.isSelected) {
+                        item.isSelected = false;
+                        let p = item.feature.properties;
+                        let hinmoku = p.hinmoku || p.品目 || "";
+                        let baseColor = getColorByHinmoku(hinmoku);
+                        item.layer.setStyle({
+                            color: baseColor,
+                            fillColor: baseColor,
+                            fillOpacity: 0.5,
+                            weight: 1.5
+                        });
+                    }
+                });
+            }
+            selectedFields = [];
+            copySelectedValuesToClipboard();
+            alert("すべての選択を解除しました。");
+        }
+
+        // ==========================================
+        // 【ラベル表示切替】チェックボックスの変更に応じてラベルの表示・非表示を切り替える処理
+        // ==========================================
+        function toggleLabels(checkbox) {
+            updateLabels();
+        }
+
+        loadGeoJsonFromServer();
+
+        // ==========================================
+        // 【追跡開始】GPSで現在地を取得し、地図の中心を移動・マークする処理
+        // ==========================================
+        function startTracking() {
+            if (!navigator.geolocation) {
+                alert("This device does not support geolocation.");
+                return;
+            }
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            watchId = navigator.geolocation.watchPosition(
+                function (position) {
+                    var lat = position.coords.latitude;
+                    var lng = position.coords.longitude;
+                    if (!currentMarker) {
+                        currentMarker = L.marker([lat, lng]).addTo(map).bindPopup("現在地").openPopup();
+                    } else {
+                        currentMarker.setLatLng([lat, lng]);
+                    }
+                    map.setView([lat, lng], 16);
+                },
+                function (error) {
+                    alert("位置情報の取得に失敗しました: " + error.message);
+                },
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+            );
+        }
+
+        // ==========================================
+        // 【追跡終了】GPSによる現在地の追跡を停止する処理
+        // ==========================================
+        function stopTracking() {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                alert("追跡を終了しました。");
+                currentMarker = null;
+            }
+        }
+
+
+    </script>
+</body>
+</html>
