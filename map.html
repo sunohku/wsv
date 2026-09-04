@@ -12,6 +12,10 @@
             padding: 0;
         }
 
+        /* ==========================================
+        // 【デザイン設定：操作パネル全体】
+        // 画面の左下にある、ボタンや日付・作業名を選ぶ操作パネルの枠組みや位置を整えています。
+        // ========================================== */
         #controls {
             position: absolute;
             bottom: 20px;
@@ -24,6 +28,10 @@
             font-size: 13px;
         }
 
+        /* ==========================================
+        // 【デザイン設定：操作パネルの行（横並び）】
+        // パネル内の項目（日付や作業名など）を横一列にきれいに並べるための設定です。
+        // ========================================== */
         .control-row {
             display: flex;
             gap: 8px;
@@ -31,6 +39,10 @@
             align-items: center;
         }
 
+        /* ==========================================
+        // 【デザイン設定：入力項目グループ（縦並び）】
+        // 「日付」や「作業名」といった文字ラベルと、その入力欄をセットにして縦に並べる設定です。
+        // ========================================== */
         .control-group {
             display: flex;
             flex-direction: column;
@@ -113,9 +125,15 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        let workMasterData = {};
+        // ==========================================
+        // 【大元の定義・変数の準備】
+        // アプリ全体で共有して使うデータを一時的に入れておく「箱（変数）」をここで最初に用意しています。
+        // ==========================================
+        let workMasterData = {}; // CSVから読み込んだ「月ごとの作業名リスト」をしまっておく箱
 
-        // ページ読み込み時に日付と時間に現在の値を自動セット、およびCSV読み込み
+        // ==========================================
+        // 【初期化処理】ページ読み込み完了時に自動実行されます
+        // ==========================================
         window.addEventListener('DOMContentLoaded', async () => {
             const now = new Date();
             const year = now.getFullYear();
@@ -127,8 +145,6 @@
             document.getElementById('global-date').value = `${year}-${month}-${day}`;
             document.getElementById('global-time').value = `${hours}:${minutes}`;
 
-            // 現在の月に合わせた初期選択（例: 9月）にする場合の処理も可能ですが、HTML側で selected を9月にしています
-
             await loadMonthlyJobsCSV();
             updateWorkList();
 
@@ -137,7 +153,9 @@
             }, 100);
         });
 
-        // monthly_jobs.csv を読み込む関数
+        // ==========================================
+        // 【CSV読み込み】月ごとの作業マスターデータを読み込む処理
+        // ==========================================
         async function loadMonthlyJobsCSV() {
             try {
                 const response = await fetch('monthly_jobs.csv');
@@ -167,7 +185,9 @@
             }
         }
 
-        // 作業月の変更に応じて作業名のセレクトボックスを更新する関数
+        // ==========================================
+        // 【作業リスト更新】選ばれた月に応じて作業名の選択肢を切り替える処理
+        // ==========================================
         function updateWorkList() {
             const selectedMonth = document.getElementById('selectMonth').value;
             const workSelect = document.getElementById('global-work-select');
@@ -198,6 +218,9 @@
         var currentGeojsonObj = null;
         var labelLayerGroup = L.layerGroup();
 
+        // ==========================================
+        // 【GeoJSON読み込み】サーバーからポリゴンデータ(geojson)を取得する処理
+        // ==========================================
         async function loadGeoJsonFromServer() {
             try {
                 let response = await fetch('品目_4326.geojson');
@@ -209,6 +232,9 @@
             }
         }
 
+        // ==========================================
+        // 【GeoJSON描画】取得したポリゴンデータを地図上に色分けして表示する処理
+        // ==========================================
         function renderGeoJson(geojson) {
             if (geojsonLayer) {
                 map.removeLayer(geojsonLayer);
@@ -288,6 +314,9 @@
             map.invalidateSize();
         }
 
+        // ==========================================
+        // 【ラベル表示切替】チェックボックスに応じてラベルの表示・非表示を切り替える処理
+        // ==========================================
         function toggleLabels(checkbox) {
             if (checkbox.checked) {
                 labelLayerGroup.addTo(map);
@@ -298,6 +327,9 @@
 
         loadGeoJsonFromServer();
 
+        // ==========================================
+        // 【追跡開始】GPSで現在地を取得し、地図の中心を移動・マークする処理
+        // ==========================================
         function startTracking() {
             if (!navigator.geolocation) {
                 alert("この端末は位置情報取得に対応していません。");
@@ -325,6 +357,9 @@
             );
         }
 
+        // ==========================================
+        // 【追跡終了】GPSによる現在地の追跡を停止する処理
+        // ==========================================
         function stopTracking() {
             if (watchId !== null) {
                 navigator.geolocation.clearWatch(watchId);
@@ -334,6 +369,9 @@
             }
         }
 
+        // ==========================================
+        // 【色判定】品種番号に応じてポリゴンの色を決める処理
+        // ==========================================
         function getColorByHinmoku(hinmoku) {
             if (!hinmoku) return "#808080";
             const colorMap = {
@@ -344,6 +382,9 @@
             return colorMap[hinmoku] || "#7f8c8d";
         }
 
+        // ==========================================
+        // 【日誌記録】ポップアップ内のボタンから作業内容をCSVログとして保存する処理
+        // ==========================================
         window.savePopupLog = async function (featureProperties) {
             const dateVal = document.getElementById('global-date').value; 
             const timeVal = document.getElementById('global-time').value; 
@@ -378,6 +419,9 @@
             }
         };
 
+        // ==========================================
+        // 【確認済更新】区画のステータスを「確認済」に変更してサーバーに保存する処理
+        // ==========================================
         window.updateRecord = async function (layerId) {
             let item = window.featureMap[layerId];
             if (!item) return;
