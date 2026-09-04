@@ -166,7 +166,7 @@
         // ==========================================
         async function loadGeoJsonFromServer() {
             try {
-                let response = await fetch('品目_4326.geojson');
+                let response = await fetch('品目5_4326.geojson');
                 if (!response.ok) throw new Error("サーバーからファイルを取得できませんでした。");
                 currentGeojsonObj = await response.json();
                 
