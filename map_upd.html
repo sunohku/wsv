@@ -495,40 +495,44 @@
         }
 
         // ==========================================
-        // 【「更新」ボタンの処理】選択された圃場の「稲刈り」に日付を書き込み、サーバーへ保存
+        // 【「更新」ボタンの処理】選択された圃場の「稲刈り」にスラッシュ区切りの日付を書き込み、全上書き用ファイルとして自動ダウンロード
         // ==========================================
-        async function updateSelectedRecord() {
+        function updateSelectedRecord() {
             if (!currentlySelectedLayer) {
                 alert("圃場が選択されていません。「選択」ボタンを押すか、地図上の圃場をクリックして選択してください。");
                 return;
             }
 
-            const dateVal = document.getElementById('global-date').value;
-            if (!dateVal) {
+            const dateInputVal = document.getElementById('global-date').value; // 例: 2026-09-05
+            if (!dateInputVal) {
                 alert("日付を正しく入力してください。");
                 return;
             }
 
+            // ハイフンをスラッシュに変換（2026-09-05 -> 2026/09/05）
+            const formattedDate = dateInputVal.replace(/-/g, '/');
+
+            // 選択されているフィーチャー（プロパティ）の「稲刈り」項目を更新
             let p = currentlySelectedLayer.feature.properties;
-            p["稲刈り"] = dateVal; // 「稲刈り」の項目に日付を格納
+            p["稲刈り"] = formattedDate;
 
             if (currentGeojsonObj) {
                 try {
-                    let response = await fetch('/save', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(currentGeojsonObj)
-                    });
-                    let result = await response.json();
-                    if (result.status === "success") {
-                        alert(`選択した圃場の「稲刈り」を ${dateVal} に更新し、サーバーに保存しました！`);
-                        renderGeoJson(currentGeojsonObj);
-                    } else {
-                        alert("保存に失敗しました: " + result.message);
-                    }
-                } catch (e) {
-                    alert(`選択した圃場の「稲刈り」を ${dateVal} に更新しました！`);
+                    // メモリ内にある全項目を含めて「品目5_4326.geojson」として自動ダウンロード
+                    let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentGeojsonObj, null, 2));
+                    let downloadAnchor = document.createElement('a');
+                    downloadAnchor.setAttribute("href", dataStr);
+                    downloadAnchor.setAttribute("download", "品目5_4326.geojson");
+                    document.body.appendChild(downloadAnchor);
+                    downloadAnchor.click();
+                    downloadAnchor.remove();
+
+                    alert(`選択した圃場の「稲刈り」を ${formattedDate} に更新しました！\n更新された「品目5_4326.geojson」がダウンロードされます。`);
+                    
+                    // 画面上も即座に再描画して反映
                     renderGeoJson(currentGeojsonObj);
+                } catch (e) {
+                    alert("ファイルの生成に失敗しました: " + e.message);
                 }
             } else {
                 alert("更新しました！");
