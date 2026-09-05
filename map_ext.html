@@ -466,7 +466,7 @@
         }
 
         // ==========================================
-        // 【現在地Firebase保存機能】秒単位の一意なID（YYYYMMDD_HHMMSS）でFirestoreへ保存
+        // 【現在地Firebase保存機能】秒単位の一意なIDでFirestoreへ保存 ＋ 所属する圃場の東西列Noを自動判定して追加
         // ==========================================
         async function saveCurrentLocationCsv() {
             let lat = (window.currentLatLng && window.currentLatLng.lat) ? window.currentLatLng.lat : "";
@@ -482,6 +482,20 @@
             if (!dateVal || !timeVal) {
                 alert("日付と時間を正しく入力してください。");
                 return;
+            }
+
+            // 現在地（緯度経度）がどのポリゴンに含まれているかを判定
+            let matchedPolygonNo = "未割当（圃場外）";
+            if (window.currentGeojsonObj && window.currentGeojsonObj.features) {
+                window.currentGeojsonObj.features.forEach(feature => {
+                    let tempLayer = L.geoJSON(feature);
+                    let bounds = tempLayer.getBounds();
+                    if (bounds.contains(window.currentLatLng)) {
+                        let p = feature.properties || {};
+                        // 東西列No、name、hinmokuなどのプロパティから名称を拾う
+                        matchedPolygonNo = p["東西列No"] || p["name"] || p["hinmoku"] || "不明な圃場";
+                    }
+                });
             }
 
             // 秒単位まで含めた一意なカスタムIDを生成（例: 20260905_150830）
@@ -512,17 +526,19 @@
                 }
                 const db = firebase.firestore();
 
+                // 緯度・経度・日付・時間・圃場名（東西列Noなど）を一緒に保存
                 await db.collection("locationLogs").doc(customDocId).set({
                     latitude: lat,
                     longitude: lng,
                     date: dateVal,
                     time: timeVal,
                     dateTime: dateTimeStr,
+                    polygonNo: matchedPolygonNo, // ★ここに判定された圃場の東西列Noが入ります
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
 
-                console.log(`[Firebase保存成功] ID: ${customDocId}, 緯度: ${lat}, 経度: ${lng}`);
-                alert("現在地をFirebaseに保存しました！（ID: " + customDocId + "）");
+                console.log(`[Firebase保存成功] ID: ${customDocId}, 圃場: ${matchedPolygonNo}, 緯度: ${lat}, 経度: ${lng}`);
+                alert(`現在地をFirebaseに保存しました！\n【圃場】${matchedPolygonNo}\n【ID】${customDocId}`);
             } catch (e) {
                 alert("Firebaseへの保存に失敗しました: " + e.message);
                 console.error(e);
