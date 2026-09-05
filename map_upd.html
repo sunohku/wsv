@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>リアルタイム追跡 地理院地図 (シンプル版)</title>
+    <title>リアルタイム追跡 地理院地図 (選択・更新対応版)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
     <!-- QRコード生成用のライブラリを読み込み -->
@@ -101,21 +101,49 @@
             border-radius: 4px;
         }
 
-        /* 現在地ファイル保存ボタンのデザイン */
-        .btn-current-loc {
-            padding: 5px 10px;
+        /* ==========================================
+        // 【ボタンデザイン統一】「現在地」ボタンと同じ形式の独立したボタン
+        // ========================================== */
+        .action-btn {
+            padding: 5px 12px;
             font-size: 13px;
             font-weight: bold;
-            background-color: #2e7d32;
             color: white;
             border: none;
             border-radius: 4px;
             cursor: pointer;
             height: 29px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
 
+        .action-btn:hover {
+            opacity: 0.85;
+        }
+
+        /* 現在地ファイル保存ボタンのデザイン */
+        .btn-current-loc {
+            background-color: #2e7d32;
+        }
         .btn-current-loc:hover {
             background-color: #1b5e20;
+        }
+
+        /* 選択ボタンのデザイン（「現在地」同様の単発押しボタン） */
+        .btn-select {
+            background-color: #007bff;
+        }
+        .btn-select:hover {
+            background-color: #0056b3;
+        }
+
+        /* 更新ボタンのデザイン */
+        .btn-update {
+            background-color: #28a745;
+        }
+        .btn-update:hover {
+            background-color: #218838;
         }
 
         /* 画面右上にQRコードを表示するボックス */
@@ -168,8 +196,10 @@
                 <span>時間</span>
                 <input type="time" id="global-time">
             </div>
-            <!-- 「現在地」ボタン -->
-            <button class="btn-current-loc" onclick="saveCurrentLocationCsv()">現在地</button>
+            <!-- 「現在地」ボタンの横に「選択」と「更新」ボタンを同じ仕様で配置 -->
+            <button class="action-btn btn-current-loc" onclick="saveCurrentLocationCsv()">現在地</button>
+            <button class="action-btn btn-select" onclick="selectCurrentLocationPolygon()">選択</button>
+            <button class="action-btn btn-update" onclick="updateSelectedRecord()">更新</button>
         </div>
 
         <input type="file" id="fileInput" accept=".geojson,.json" style="display:none;" />
@@ -180,6 +210,8 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
+        let currentlySelectedLayer = null; // 現在選択されている単体ポリゴン
+
         // ==========================================
         // 【初期化処理】ページ読み込み完了時に自動実行されます
         // ==========================================
@@ -279,18 +311,64 @@
         // ==========================================
         function renderGeoJson(geojson) {
             if (geojsonLayer) map.removeLayer(geojsonLayer);
+            window.featureMap = {};
+            currentlySelectedLayer = null;
 
             geojsonLayer = L.geoJSON(geojson, {
                 style: function (feature) {
                     let p = feature.properties || {};
                     let hinmoku = p.hinmoku || p.品種名 || p.品目 || p.CD || "";
                     let baseColor = getColorByHinmoku(hinmoku);
+                    let isUpdated = (p.稲刈り && p.稲刈り !== "");
                     return {
-                        color: baseColor,
+                        color: isUpdated ? "#2c3e50" : baseColor,
                         fillColor: baseColor,
                         fillOpacity: 0.6,
-                        weight: 1.5
+                        weight: isUpdated ? 3 : 1.5
                     };
+                },
+                onEachFeature: function (feature, layer) {
+                    let layerId = L.stamp(layer);
+                    window.featureMap[layerId] = { feature: feature, layer: layer };
+
+                    // 地図上のポリゴンを直接タップ（クリック）して選択できるようにする処理
+                    layer.on('click', function () {
+                        let p = feature.properties;
+                        let hinmoku = p.hinmoku || p.品種名 || p.品目 || p.CD || "";
+                        let baseColor = getColorByHinmoku(hinmoku);
+                        let isUpdated = (p.稲刈り && p.稲刈り !== "");
+
+                        if (currentlySelectedLayer && currentlySelectedLayer !== layer) {
+                            let prevP = currentlySelectedLayer.feature.properties;
+                            let prevHinmoku = prevP.hinmoku || prevP.品種名 || prevP.品目 || prevP.CD || "";
+                            let prevColor = getColorByHinmoku(prevHinmoku);
+                            let prevUpdated = (prevP.稲刈り && prevP.稲刈り !== "");
+                            currentlySelectedLayer.setStyle({
+                                color: prevUpdated ? "#2c3e50" : prevColor,
+                                fillColor: prevColor,
+                                fillOpacity: 0.6,
+                                weight: prevUpdated ? 3 : 1.5
+                            });
+                        }
+
+                        if (currentlySelectedLayer === layer) {
+                            layer.setStyle({
+                                color: isUpdated ? "#2c3e50" : baseColor,
+                                fillColor: baseColor,
+                                fillOpacity: 0.6,
+                                weight: isUpdated ? 3 : 1.5
+                            });
+                            currentlySelectedLayer = null;
+                        } else {
+                            layer.setStyle({
+                                color: '#e74c3c',
+                                fillColor: '#e74c3c',
+                                fillOpacity: 0.7,
+                                weight: 3
+                            });
+                            currentlySelectedLayer = layer;
+                        }
+                    });
                 }
             });
 
@@ -350,6 +428,111 @@
             if (val.includes("大麦") || val.includes("大豆")) return "#ffeb3b";
 
             return "#b0bec5";
+        }
+
+        // ==========================================
+        // 【「選択」ボタンの処理】「現在地」と同様に1回押すだけで、現在のGPS位置が含まれる圃場を自動選択する
+        // ==========================================
+        function selectCurrentLocationPolygon() {
+            let lat = (window.currentLatLng && window.currentLatLng.lat) ? window.currentLatLng.lat : "";
+            let lng = (window.currentLatLng && window.currentLatLng.lng) ? window.currentLatLng.lng : "";
+
+            if (!lat || !lng) {
+                alert("現在地がまだ取得できていません。「追跡開始」を押してGPSの位置情報を取得してください。");
+                return;
+            }
+
+            if (!currentGeojsonObj || !currentGeojsonObj.features) {
+                alert("圃場データが読み込まれていません。");
+                return;
+            }
+
+            let foundFeature = null;
+            let foundLayer = null;
+
+            // 既存の選択状態をリセット
+            if (currentlySelectedLayer) {
+                let prevP = currentlySelectedLayer.feature.properties;
+                let prevHinmoku = prevP.hinmoku || prevP.品種名 || prevP.品目 || prevP.CD || "";
+                let prevColor = getColorByHinmoku(prevHinmoku);
+                let prevUpdated = (prevP.稲刈り && prevP.稲刈り !== "");
+                currentlySelectedLayer.setStyle({
+                    color: prevUpdated ? "#2c3e50" : prevColor,
+                    fillColor: prevColor,
+                    fillOpacity: 0.6,
+                    weight: prevUpdated ? 3 : 1.5
+                });
+                currentlySelectedLayer = null;
+            }
+
+            // 現在地が含まれるレイヤーを探索
+            geojsonLayer.eachLayer(layer => {
+                let tempLayer = L.geoJSON(layer.feature);
+                let bounds = tempLayer.getBounds();
+                if (bounds.contains(window.currentLatLng)) {
+                    foundFeature = layer.feature;
+                    foundLayer = layer;
+                }
+            });
+
+            if (foundLayer && foundFeature) {
+                let p = foundFeature.properties || {};
+                let matchedName = p["東西列No"] || p["name"] || p["hinmoku"] || "対象圃場";
+
+                // 赤枠でハイライト
+                foundLayer.setStyle({
+                    color: '#e74c3c',
+                    fillColor: '#e74c3c',
+                    fillOpacity: 0.7,
+                    weight: 3
+                });
+                currentlySelectedLayer = foundLayer;
+
+                alert(`現在地にある圃場を選択しました！\n【圃場】${matchedName}`);
+            } else {
+                alert("現在地が含まれる圃場が見つかりませんでした（圃場外にいます）。");
+            }
+        }
+
+        // ==========================================
+        // 【「更新」ボタンの処理】選択された圃場の「稲刈り」に日付を書き込み、サーバーへ保存
+        // ==========================================
+        async function updateSelectedRecord() {
+            if (!currentlySelectedLayer) {
+                alert("圃場が選択されていません。「選択」ボタンを押すか、地図上の圃場をクリックして選択してください。");
+                return;
+            }
+
+            const dateVal = document.getElementById('global-date').value;
+            if (!dateVal) {
+                alert("日付を正しく入力してください。");
+                return;
+            }
+
+            let p = currentlySelectedLayer.feature.properties;
+            p["稲刈り"] = dateVal; // 「稲刈り」の項目に日付を格納
+
+            if (currentGeojsonObj) {
+                try {
+                    let response = await fetch('/save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(currentGeojsonObj)
+                    });
+                    let result = await response.json();
+                    if (result.status === "success") {
+                        alert(`選択した圃場の「稲刈り」を ${dateVal} に更新し、サーバーに保存しました！`);
+                        renderGeoJson(currentGeojsonObj);
+                    } else {
+                        alert("保存に失敗しました: " + result.message);
+                    }
+                } catch (e) {
+                    alert(`選択した圃場の「稲刈り」を ${dateVal} に更新しました！`);
+                    renderGeoJson(currentGeojsonObj);
+                }
+            } else {
+                alert("更新しました！");
+            }
         }
 
         // ==========================================
@@ -492,13 +675,11 @@
                     let bounds = tempLayer.getBounds();
                     if (bounds.contains(window.currentLatLng)) {
                         let p = feature.properties || {};
-                        // 東西列No、name、hinmokuなどのプロパティから名称を拾う
                         matchedPolygonNo = p["東西列No"] || p["name"] || p["hinmoku"] || "不明な圃場";
                     }
                 });
             }
 
-            // 秒単位まで含めた一意なカスタムIDを生成（例: 20260905_150830）
             const now = new Date();
             const year = now.getFullYear();
             const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -526,14 +707,13 @@
                 }
                 const db = firebase.firestore();
 
-                // 緯度・経度・日付・時間・圃場名（東西列Noなど）を一緒に保存
                 await db.collection("locationLogs").doc(customDocId).set({
                     latitude: lat,
                     longitude: lng,
                     date: dateVal,
                     time: timeVal,
                     dateTime: dateTimeStr,
-                    polygonNo: matchedPolygonNo, // ★ここに判定された圃場の東西列Noが入ります
+                    polygonNo: matchedPolygonNo,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
 
@@ -568,57 +748,35 @@
             }
         }
 
-async function checkAndLogCurrentPosition() {
+        function checkAndLogCurrentPosition() {
             if (!window.currentLatLng) {
                 console.log("【自動ログ】現在地がまだ取得できていません。");
                 return;
             }
 
-            let lat = window.currentLatLng.lat;
-            let lng = window.currentLatLng.lng;
-            let matchedPolygonNo = "未割当（圃場外）";
+            let latLng = window.currentLatLng;
+            let matchedPolygonNo = null;
 
             if (window.currentGeojsonObj && window.currentGeojsonObj.features) {
                 window.currentGeojsonObj.features.forEach(feature => {
                     let tempLayer = L.geoJSON(feature);
                     let bounds = tempLayer.getBounds();
 
-                    if (bounds.contains(window.currentLatLng)) {
+                    if (bounds.contains(latLng)) {
                         let p = feature.properties || {};
-                        matchedPolygonNo = p["東西列No"] || p["name"] || p["hinmoku"] || "不明な圃場";
+                        matchedPolygonNo = p["東西列No"] || p["name"] || "不明な区画";
                     }
                 });
             }
 
-            // 秒単位の一意なIDを生成して自動保存
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const day = String(now.getDate()).padStart(2, '0');
-            const hours = String(now.getHours()).padStart(2, '0');
-            const minutes = String(now.getMinutes()).padStart(2, '0');
-            const seconds = String(now.getSeconds()).padStart(2, '0');
+            if (matchedPolygonNo) {
+                let now = new Date();
+                let timeString = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                let dateString = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
 
-            let cleanDate = `${year}${month}${day}`;
-            let cleanTime = `${hours}${minutes}${seconds}`;
-            let customDocId = `${cleanDate}_${cleanTime}`;
-            let dateVal = `${year}-${month}-${day}`;
-            let timeVal = `${hours}:${minutes}`;
-            let dateTimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-
-            try {
-                await db.collection("locationLogs").doc(customDocId).set({
-                    latitude: lat,
-                    longitude: lng,
-                    date: dateVal,
-                    time: timeVal,
-                    dateTime: dateTimeStr,
-                    polygonNo: matchedPolygonNo,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
-                console.log(`【自動保存成功】 ID: ${customDocId}, 圃場: ${matchedPolygonNo}`);
-            } catch (e) {
-                console.error("【自動保存失敗】", e);
+                console.log(`【自動ログ記録】 日付: ${dateString}, 時間: ${timeString}, 東西列No: ${matchedPolygonNo}`);
+            } else {
+                console.log("【自動ログ】現在、どの圃場ポリゴンにも含まれていません（移動中など）。");
             }
         }
 
