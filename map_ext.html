@@ -6,8 +6,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>リアルタイム追跡 地理院地図 (シンプル版)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+
     <!-- QRコード生成用のライブラリを読み込み -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <!-- Firebaseの読み込み（Compat版） -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+
+    <!-- ★firebaseの初期化 -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCCMQ-1VdU-De9veqkh1UEnaWQq71dgG-U",
+            authDomain: "my-map-log-5e3bd.firebaseapp.com",
+            projectId: "my-map-log-5e3bd",
+            storageBucket: "my-map-log-5e3bd.firebasestorage.app",
+            messagingSenderId: "52246773478",
+            appId: "1:52246773478:web:dc5eb04d5e52d49422c527"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+    </script>
+
+
+
+
+
     <style>
         html,
         body,
@@ -41,7 +67,7 @@
             display: flex;
             gap: 8px;
             margin-top: 6px;
-            align-items: center;
+            align-items: flex-end;
         }
 
         /* ==========================================
@@ -61,6 +87,23 @@
             font-size: 13px;
             border: 1px solid #ccc;
             border-radius: 4px;
+        }
+
+        /* 現在地ファイル保存ボタンのデザイン */
+        .btn-current-loc {
+            padding: 5px 10px;
+            font-size: 13px;
+            font-weight: bold;
+            background-color: #2e7d32;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            height: 29px;
+        }
+
+        .btn-current-loc:hover {
+            background-color: #1b5e20;
         }
 
         /* 画面右上にQRコードを表示するボックス */
@@ -113,6 +156,8 @@
                 <span>時間</span>
                 <input type="time" id="global-time">
             </div>
+            <!-- 「現在地」ボタン -->
+            <button class="btn-current-loc" onclick="saveCurrentLocationCsv()">現在地</button>
         </div>
 
         <input type="file" id="fileInput" accept=".geojson,.json" style="display:none;" />
@@ -235,7 +280,6 @@
                         weight: 1.5
                     };
                 }
-                // ※ クリック時のイベント（色変更・選択機能）は削除しました
             });
 
             geojsonLayer.addTo(map);
@@ -315,18 +359,13 @@
                 currentGeojsonObj.features.forEach(feature => {
                     try {
                         let p = feature.properties || {};
-
-                        // --- 【ここにガード処理を追加】 ---
                         let rawValue = selectedKey ? p[selectedKey] : null;
 
-                        // 値が null、undefined、あるいは文字の "null"、または空文字の場合はスキップ！
                         if (rawValue === null || rawValue === undefined || rawValue === "null" || String(rawValue).trim() === "") {
-                            return; // このポリゴンはラベルを描画せずに次へ進む
+                            return;
                         }
 
                         let labelText = String(rawValue);
-                        // ---------------------------------
-
                         let tempLayer = L.geoJSON(feature);
                         let bounds = tempLayer.getBounds();
                         if (bounds && bounds.isValid()) {
@@ -369,21 +408,15 @@
             }
 
             alert("位置情報の取得を開始します。GPSの電波状況をご確認ください。");
-            
-            // ★追跡開始と同時に自動ロギングタイマーもスタート！
+
             startAutoLogging();
-            
+
             watchId = navigator.geolocation.watchPosition(
                 function (position) {
                     var lat = position.coords.latitude;
                     var lng = position.coords.longitude;
 
-
-                    // --- ★ここを追加：自動ロギング用に現在地を保持する ---
                     window.currentLatLng = { lat: lat, lng: lng };
-                    // ----------------------------------------------------
-
-
 
                     if (!currentMarker) {
                         currentMarker = L.marker([lat, lng]).addTo(map).bindPopup("現在地").openPopup();
@@ -391,10 +424,7 @@
                         currentMarker.setLatLng([lat, lng]);
                     }
 
-                    // 追跡中は地図の中心を現在地に移動
-                    //map.setView([lat, lng], 16);
-                    //map.setView([lat, lng]);
-                    map.panTo([lat, lng])
+                    map.panTo([lat, lng]);
                 },
                 function (error) {
                     let errorMsg = "位置情報の取得に失敗しました。";
@@ -415,11 +445,64 @@
             );
         }
 
+        // ==========================================
+        // 【現在地Firebase保存機能】サーバーの代わりにFirestoreへ直接保存
+        // ==========================================
+        async function saveCurrentLocationCsv() {
+            let lat = (window.currentLatLng && window.currentLatLng.lat) ? window.currentLatLng.lat : "";
+            let lng = (window.currentLatLng && window.currentLatLng.lng) ? window.currentLatLng.lng : "";
 
-        // 2026.09.05 09:17
-        // --- 自動ジャーナル記録（直観・自動ロギングテスト用） ---
+            let dateVal = document.getElementById('global-date').value;
+            let timeVal = document.getElementById('global-time').value;
+
+            if (!lat || !lng) {
+                alert("現在地がまだ取得できていません。「追跡開始」を押してGPSの位置情報を取得してください。");
+                return;
+            }
+
+            if (!dateVal || !timeVal) {
+                alert("日付と時間を正しく入力してください。");
+                return;
+            }
+
+            let dateTimeStr = `${dateVal.replace(/-/g, '/')} ${timeVal}`;
+
+            try {
+                // Firebaseの初期化（まだしていなかった場合の保険）
+                if (!firebase.apps.length) {
+                    const firebaseConfig = {
+                        apiKey: "AIzaSyCCMQ-1VdU-De9veqkh1UEnaWQq71dgG-U",
+                        authDomain: "my-map-log-5e3bd.firebaseapp.com",
+                        projectId: "my-map-log-5e3bd",
+                        storageBucket: "my-map-log-5e3bd.firebasestorage.app",
+                        messagingSenderId: "52246773478",
+                        appId: "1:52246773478:web:dc5eb04d5e52d49422c527"
+                    };
+                    firebase.initializeApp(firebaseConfig);
+                }
+                const db = firebase.firestore();
+
+                // Firestoreの "locationLogs" コレクションにデータを追加
+                await db.collection("locationLogs").add({
+                    latitude: lat,
+                    longitude: lng,
+                    date: dateVal,
+                    time: timeVal,
+                    dateTime: dateTimeStr,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                console.log(`【Firebase保存成功】 緯度:${lat}, 経度:${lng}, 日時:${dateTimeStr}`);
+                alert("現在地をFirebaseに保存しました！");
+            } catch (e) {
+                alert("Firebaseへの保存に失敗しました: " + e.message);
+                console.error(e);
+            }
+        }
+
+
+        // --- 自動ジャーナル記録 ---
         let autoLoggingTimer = null;
-        let lastLoggedPolygonNo = null; // 同じ圃場の連続記録を防ぐためのガード
 
         function startAutoLogging() {
             if (autoLoggingTimer) {
@@ -428,7 +511,6 @@
 
             console.log("【自動ログ】自動稲刈りジャーナル記録を開始しました（テスト間隔: 1分）");
 
-            // テスト用に 1分 (60000ミリ秒) ごとに実行
             autoLoggingTimer = setInterval(() => {
                 checkAndLogCurrentPosition();
             }, 60 * 1000);
@@ -442,63 +524,44 @@
             }
         }
 
-        // 現在地とポリゴンを照らし合わせて判定する関数
         function checkAndLogCurrentPosition() {
-            // 1. 現在地の取得（すでにある現在地マーカーや座標変数から取得）
             if (!window.currentLatLng) {
                 console.log("【自動ログ】現在地がまだ取得できていません。");
                 return;
             }
 
-            let latLng = window.currentLatLng; // [lat, lng] または LeafletのLatLngオブジェクト
-            let targetPoint = turf.point([latLng.lng, latLng.lat]); // Turf.js等を使う場合、あるいはLeaflet標準の判定
-
+            let latLng = window.currentLatLng;
             let matchedPolygonNo = null;
 
-            // 2. 読み込まれているGeoJSONの全ポリゴンを走査
             if (window.currentGeojsonObj && window.currentGeojsonObj.features) {
                 window.currentGeojsonObj.features.forEach(feature => {
-                    // Leafletのgeometryから簡易的に包含判定をするか、Turf.jsを使う
                     let tempLayer = L.geoJSON(feature);
                     let bounds = tempLayer.getBounds();
 
-                    // まずバウンス（矩形）でざっくり絞り込んでから正確に判定
                     if (bounds.contains(latLng)) {
-                        // プロパティから「東西列No」を取得（フィールド名は実際のGeoJSONに合わせて調整）
                         let p = feature.properties || {};
                         let colNo = p["東西列No"] || p["name"] || "不明な区画";
-
-                        // ここで厳密にポリゴン内か判定したい場合はLeaflet.pipやTurfを使えますが、
-                        // まずはバウンス内に入ったものを候補としてキャッチ！
                         matchedPolygonNo = colNo;
                     }
                 });
             }
 
-            // 3. 判定結果をログに残す
             if (matchedPolygonNo) {
                 let now = new Date();
                 let timeString = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
                 let dateString = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
 
                 console.log(`【自動ログ記録】 日付: ${dateString}, 時間: ${timeString}, 東西列No: ${matchedPolygonNo}`);
-
-                // CSV形式の文字列を生成（202608291808_cptn.csv のような形式へ蓄積するベース）
-                let csvRow = `${dateString} ${timeString},${matchedPolygonNo}\n`;
-
-                // ※ここにファイル書き出し、あるいは配列への蓄積処理を接続できます！
-
             } else {
                 console.log("【自動ログ】現在、どの圃場ポリゴンにも含まれていません（移動中など）。");
             }
         }
 
-
-
         // ==========================================
         // 【追跡終了】GPSによる現在地の追跡を停止する処理
         // ==========================================
         function stopTracking() {
+            stopAutoLogging();
             if (watchId !== null) {
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
