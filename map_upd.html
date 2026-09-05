@@ -37,10 +37,7 @@
             padding: 0;
         }
 
-        /* ==========================================
-        // 【デザイン設定：進行方向を向く矢印マーカー】
-        // スマホの向き（進行方向）に合わせて回転する三角形のマーカーデザインです。
-        // ========================================== */
+        /* 進行方向を向く矢印マーカー */
         .arrow-marker {
             background: transparent;
             border: none;
@@ -50,15 +47,12 @@
             height: 0;
             border-left: 10px solid transparent;
             border-right: 10px solid transparent;
-            border-bottom: 24px solid #1976d2; /* 矢印の色（青） */
+            border-bottom: 24px solid #1976d2;
             transform-origin: 50% 70%;
             filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
         }
 
-        /* ==========================================
-        // 【デザイン設定：操作パネル全体】
-        // 画面の左下にある、ボタンやラベル設定を選ぶ操作パネルの枠組みや位置を整えています。
-        // ========================================== */
+        /* 操作パネル全体 */
         #controls {
             position: absolute;
             bottom: 20px;
@@ -71,10 +65,6 @@
             font-size: 13px;
         }
 
-        /* ==========================================
-        // 【デザイン設定：操作パネルの行（横並び）】
-        // パネル内の項目を横一列にきれいに並べるための設定です。
-        // ========================================== */
         .control-row {
             display: flex;
             gap: 8px;
@@ -82,10 +72,6 @@
             align-items: flex-end;
         }
 
-        /* ==========================================
-        // 【デザイン設定：入力項目グループ（縦並び）】
-        // 文字ラベルと入力欄をセットにして縦に並べる設定です。
-        // ========================================== */
         .control-group {
             display: flex;
             flex-direction: column;
@@ -101,9 +87,6 @@
             border-radius: 4px;
         }
 
-        /* ==========================================
-        // 【ボタンデザイン統一】「現在地」ボタンと同じ形式の独立したボタン
-        // ========================================== */
         .action-btn {
             padding: 5px 12px;
             font-size: 13px;
@@ -122,31 +105,23 @@
             opacity: 0.85;
         }
 
-        /* 現在地ファイル保存ボタンのデザイン */
         .btn-current-loc {
             background-color: #2e7d32;
         }
-        .btn-current-loc:hover {
-            background-color: #1b5e20;
-        }
-
-        /* 選択ボタンのデザイン */
+        
+        /* 選択ボタン（アクティブ時は色を変える） */
         .btn-select {
             background-color: #007bff;
         }
-        .btn-select:hover {
-            background-color: #0056b3;
+        .btn-select.active {
+            background-color: #ff5722 !important;
+            box-shadow: 0 0 5px rgba(255,87,34,0.8);
         }
 
-        /* 更新ボタンのデザイン */
         .btn-update {
             background-color: #28a745;
         }
-        .btn-update:hover {
-            background-color: #218838;
-        }
 
-        /* 画面右上にQRコードを表示するボックス */
         #qr-box {
             position: absolute;
             top: 20px;
@@ -169,7 +144,6 @@
 
 <body>
 
-    <!-- 画面右上にスマホアクセス用のQRコードを表示 -->
     <div id="qr-box">
         <span>スマホでアクセス</span>
         <div id="qrcode"></div>
@@ -196,13 +170,11 @@
                 <span>時間</span>
                 <input type="time" id="global-time">
             </div>
-            <!-- 「現在地」ボタンの横に「選択」と「更新」ボタンを配置 -->
             <button class="action-btn btn-current-loc" onclick="saveCurrentLocationCsv()">現在地</button>
-            <button class="action-btn btn-select" onclick="alert('地図上の圃場をクリックして選択してください。')">選択</button>
+            <!-- 余計なアラートを削除し、クリックで選択モードをON/OFFするボタンに変更 -->
+            <button id="selectBtn" class="action-btn btn-select" onclick="toggleSelectMode()">選択</button>
             <button class="action-btn btn-update" onclick="updateSelectedRecord()">更新</button>
         </div>
-
-        <input type="file" id="fileInput" accept=".geojson,.json" style="display:none;" />
     </div>
 
     <div id="map"></div>
@@ -210,11 +182,9 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        let currentlySelectedLayer = null; // 現在選択されている単体ポリゴン
+        let currentlySelectedLayer = null; 
+        let isSelectMode = false; // 選択モードの状態管理
 
-        // ==========================================
-        // 【初期化処理】ページ読み込み完了時に自動実行されます
-        // ==========================================
         window.addEventListener('DOMContentLoaded', async () => {
             const now = new Date();
             const year = now.getFullYear();
@@ -226,7 +196,6 @@
             document.getElementById('global-date').value = `${year}-${month}-${day}`;
             document.getElementById('global-time').value = `${hours}:${minutes}`;
 
-            // 画面右上に、現在開いているページのURLのQRコードを自動生成する
             new QRCode(document.getElementById("qrcode"), {
                 text: window.location.href,
                 width: 100,
@@ -243,7 +212,6 @@
             }, 100);
         });
 
-        // 地図の初期化（地理院タイル：航空写真）
         var map = L.map('map').setView([36.747, 137.016], 14);
 
         var gsiLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
@@ -258,9 +226,6 @@
         var currentGeojsonObj = null;
         var labelLayerGroup = L.layerGroup();
 
-        // ==========================================
-        // 【GeoJSON読み込み】サーバーからポリゴンデータ(geojson)を取得する処理
-        // ==========================================
         async function loadGeoJsonFromServer() {
             try {
                 let response = await fetch('品目5_4326.geojson');
@@ -274,9 +239,6 @@
             }
         }
 
-        // ==========================================
-        // 【ラベル項目設定】地図上に表示する項目の選択肢を組み立てる処理
-        // ==========================================
         function populateLabelFields(geojson) {
             const select = document.getElementById('labelFieldSelect');
             select.innerHTML = "";
@@ -306,9 +268,6 @@
             }
         }
 
-        // ==========================================
-        // 【GeoJSON描画】取得したポリゴンデータを地図上に色分けして表示する処理
-        // ==========================================
         function renderGeoJson(geojson) {
             if (geojsonLayer) map.removeLayer(geojsonLayer);
             window.featureMap = {};
@@ -331,13 +290,14 @@
                     let layerId = L.stamp(layer);
                     window.featureMap[layerId] = { feature: feature, layer: layer };
 
-                    // 地図上のポリゴンを直接タップ（クリック）して選択できるようにする処理
+                    // 圃場をクリックしたときの処理
                     layer.on('click', function () {
                         let p = feature.properties;
                         let hinmoku = p.hinmoku || p.品種名 || p.品目 || p.CD || "";
                         let baseColor = getColorByHinmoku(hinmoku);
                         let isUpdated = (p.稲刈り && p.稲刈り !== "");
 
+                        // 既存の選択を解除
                         if (currentlySelectedLayer && currentlySelectedLayer !== layer) {
                             let prevP = currentlySelectedLayer.feature.properties;
                             let prevHinmoku = prevP.hinmoku || prevP.品種名 || prevP.品目 || prevP.CD || "";
@@ -375,43 +335,18 @@
             geojsonLayer.addTo(map);
             gsiLayer.bringToBack();
             updateLabels();
-
-            const bounds = geojsonLayer.getBounds();
-            if (bounds.isValid()) {
-                map.fitBounds(bounds);
-            }
-            map.invalidateSize();
         }
 
-        // ==========================================
-        // 【色判定】品種名に応じてポリゴンの色を決める処理
-        // ==========================================
         function getColorByHinmoku(hinmoku) {
             if (!hinmoku) return "#e0e0e0";
             let val = String(hinmoku).trim();
 
             const colorMap = {
                 "てんたかく": "#64b5f6",
-                "てんたかく:直播 鉄コ": "#42a5f5",
-                "1": "#64b5f6",
                 "コシヒカリ": "#8bc34a",
-                "コシヒカリ:直播 V溝": "#7cb342",
-                "コシヒカリ:直播 鉄コ": "#689f38",
-                "コシヒカリ:アルギ": "#d1c4e9",
-                "2": "#8bc34a",
-                "7": "#d1c4e9",
                 "富富富": "#e040fb",
-                "富富": "#e040fb",
-                "4": "#e040fb",
                 "やまだわら": "#f8bbd0",
-                "やまだわら:飼料": "#f48fb1",
-                "83": "#f8bbd0",
                 "砂利採取": "#9e9e9e",
-                "鉄コ": "#78909c",
-                "V溝": "#5c6bc0",
-                "9": "#9e9e9e",
-                "14": "#78909c",
-                "23": "#5c6bc0",
                 "畑など": "#f44336",
                 "大麦・大豆": "#ffeb3b",
                 "未定": "#f1f8e9"
@@ -421,7 +356,6 @@
             if (val.includes("てんたかく")) return "#64b5f6";
             if (val.includes("コシヒカリ")) return "#8bc34a";
             if (val.includes("富富富")) return "#e040fb";
-            if (val.includes("アルギ")) return "#d1c4e9";
             if (val.includes("やまだわら")) return "#f8bbd0";
             if (val.includes("砂利")) return "#9e9e9e";
             if (val.includes("畑")) return "#f44336";
@@ -430,31 +364,39 @@
             return "#b0bec5";
         }
 
-        // ==========================================
-        // 【「更新」ボタンの処理】選択された圃場の「稲刈り」にスラッシュ区切りの日付を書き込み、全上書き用ファイルとして自動ダウンロード
-        // ==========================================
+        // 「選択」ボタンのクリック切り替え（アラートを出さずにモード切替のみ）
+        function toggleSelectMode() {
+            isSelectMode = !isSelectMode;
+            const btn = document.getElementById('selectBtn');
+            if (isSelectMode) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        }
+
+        // 「更新」ボタン：選択された圃場のプロパティに日付を書き込み、画面反映とファイルダウンロードを行う
         function updateSelectedRecord() {
             if (!currentlySelectedLayer) {
                 alert("圃場が選択されていません。地図上の圃場をクリックして選択してください。");
                 return;
             }
 
-            const dateInputVal = document.getElementById('global-date').value; // 例: 2026-09-05
+            const dateInputVal = document.getElementById('global-date').value; 
             if (!dateInputVal) {
                 alert("日付を正しく入力してください。");
                 return;
             }
 
-            // ハイフンをスラッシュに変換（2026-09-05 -> 2026/09/05）
             const formattedDate = dateInputVal.replace(/-/g, '/');
 
-            // 選択されているフィーチャー（プロパティ）の「稲刈り」項目を更新
+            // 選択されたレイヤーのプロパティを書き換え
             let p = currentlySelectedLayer.feature.properties;
             p["稲刈り"] = formattedDate;
 
             if (currentGeojsonObj) {
                 try {
-                    // メモリ内にある全項目を含めて「品目5_4326.geojson」として自動ダウンロード
+                    // 自動ダウンロード処理
                     let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentGeojsonObj, null, 2));
                     let downloadAnchor = document.createElement('a');
                     downloadAnchor.setAttribute("href", dataStr);
@@ -463,21 +405,16 @@
                     downloadAnchor.click();
                     downloadAnchor.remove();
 
-                    alert(`選択した圃場の「稲刈り」を ${formattedDate} に更新しました！\n更新された「品目5_4326.geojson」がダウンロードされます。`);
-                    
-                    // 画面上も即座に再描画して反映
+                    // 即座に地図上の見た目を再描画して反映
                     renderGeoJson(currentGeojsonObj);
+
+                    alert(`選択した圃場の「稲刈り」を ${formattedDate} に更新しました！`);
                 } catch (e) {
                     alert("ファイルの生成に失敗しました: " + e.message);
                 }
-            } else {
-                alert("更新しました！");
             }
         }
 
-        // ==========================================
-        // 【ラベル更新】地図上のポリゴンに文字（ラベル）を表示・更新する処理
-        // ==========================================
         function updateLabels() {
             labelLayerGroup.clearLayers();
 
@@ -520,16 +457,10 @@
             labelLayerGroup.addTo(map);
         }
 
-        // ==========================================
-        // 【ラベル表示切替】チェックボックスの変更に応じてラベルの表示・非表示を切り替える処理
-        // ==========================================
         function toggleLabels(checkbox) {
             updateLabels();
         }
 
-        // ==========================================
-        // 【追跡開始】GPSで現在地を取得し、地図の中心を移動・進行方向を向く矢印でマークする処理
-        // ==========================================
         function startTracking() {
             if (!navigator.geolocation) {
                 alert("この端末は位置情報取得に対応していません。");
@@ -540,18 +471,16 @@
                 watchId = null;
             }
 
-            alert("位置情報の取得を開始します。GPSの電波状況をご確認ください。");
-            startAutoLogging();
+            alert("位置情報の取得を開始します。");
 
             watchId = navigator.geolocation.watchPosition(
                 function (position) {
                     var lat = position.coords.latitude;
                     var lng = position.coords.longitude;
-                    var heading = position.coords.heading; // 進行方向 (0〜360度)
+                    var heading = position.coords.heading;
 
                     window.currentLatLng = { lat: lat, lng: lng };
 
-                    // 進行方向（heading）がある場合は矢印をその角度に回転させる
                     var rotationStyle = (heading !== null && !isNaN(heading)) ? `transform: rotate(${heading}deg);` : '';
                     var arrowIcon = L.divIcon({
                         className: 'arrow-marker',
@@ -570,44 +499,23 @@
                     map.panTo([lat, lng]);
                 },
                 function (error) {
-                    let errorMsg = "位置情報の取得に失敗しました。";
-                    switch (error.code) {
-                        case error.PERMISSION_DENIED:
-                            errorMsg = "位置情報の利用が許可されていません。ブラウザの設定をご確認ください。";
-                            break;
-                        case error.POSITION_UNAVAILABLE:
-                            errorMsg = "位置情報が取得できませんでした（GPS信号の不具合など）。";
-                            break;
-                        case error.TIMEOUT:
-                            errorMsg = "位置情報の取得がタイムアウトしました。";
-                            break;
-                    }
-                    alert(errorMsg);
+                    alert("位置情報の取得に失敗しました。");
                 },
                 { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
             );
         }
 
-        // ==========================================
-        // 【現在地Firebase保存機能】秒単位の一意なIDでFirestoreへ保存 ＋ 所属する圃場の東西列Noを自動判定して追加
-        // ==========================================
         async function saveCurrentLocationCsv() {
             let lat = (window.currentLatLng && window.currentLatLng.lat) ? window.currentLatLng.lat : "";
             let lng = (window.currentLatLng && window.currentLatLng.lng) ? window.currentLatLng.lng : "";
-
             let dateVal = document.getElementById('global-date').value;
             let timeVal = document.getElementById('global-time').value;
 
             if (!lat || !lng) {
-                alert("現在地がまだ取得できていません。「追跡開始」を押してGPSの位置情報を取得してください。");
-                return;
-            }
-            if (!dateVal || !timeVal) {
-                alert("日付と時間を正しく入力してください。");
+                alert("現在地がまだ取得できていません。");
                 return;
             }
 
-            // 現在地（緯度経度）がどのポリゴンに含まれているかを判定
             let matchedPolygonNo = "未割当（圃場外）";
             if (window.currentGeojsonObj && window.currentGeojsonObj.features) {
                 window.currentGeojsonObj.features.forEach(feature => {
@@ -621,116 +529,28 @@
             }
 
             const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const day = String(now.getDate()).padStart(2, '0');
-            const hours = String(now.getHours()).padStart(2, '0');
-            const minutes = String(now.getMinutes()).padStart(2, '0');
-            const seconds = String(now.getSeconds()).padStart(2, '0');
-
-            let cleanDate = `${year}${month}${day}`;
-            let cleanTime = `${hours}${minutes}${seconds}`;
-            let customDocId = `${cleanDate}_${cleanTime}`;
-            let dateTimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+            let customDocId = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`;
 
             try {
-                if (!firebase.apps.length) {
-                    const firebaseConfig = {
-                        apiKey: "AIzaSyCCM0-1Vdu-De9eqkh1UNawQQ71dg-U",
-                        authDomain: "my-map-log-5e3bd.firebaseapp.com",
-                        projectId: "my-map-log-5e3bd",
-                        storageBucket: "my-map-log-5e3bd.appspot.com",
-                        messagingSenderId: "52246773478",
-                        appId: "1:52246773478:web:dc5eb04d5e52d4922c527"
-                    };
-                    firebase.initializeApp(firebaseConfig);
-                }
-                const db = firebase.firestore();
-
                 await db.collection("locationLogs").doc(customDocId).set({
                     latitude: lat,
                     longitude: lng,
                     date: dateVal,
                     time: timeVal,
-                    dateTime: dateTimeStr,
                     polygonNo: matchedPolygonNo,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
-
-                console.log(`[Firebase保存成功] ID: ${customDocId}, 圃場: ${matchedPolygonNo}, 緯度: ${lat}, 経度: ${lng}`);
-                alert(`現在地をFirebaseに保存しました！\n【圃場】${matchedPolygonNo}\n【ID】${customDocId}`);
+                alert(`現在地をFirebaseに保存しました！\n【圃場】${matchedPolygonNo}`);
             } catch (e) {
                 alert("Firebaseへの保存に失敗しました: " + e.message);
-                console.error(e);
             }
         }
 
-        // --- 自動ジャーナル記録 ---
-        let autoLoggingTimer = null;
-
-        function startAutoLogging() {
-            if (autoLoggingTimer) {
-                clearInterval(autoLoggingTimer);
-            }
-
-            console.log("【自動ログ】自動稲刈りジャーナル記録を開始しました（テスト間隔: 1分）");
-
-            autoLoggingTimer = setInterval(() => {
-                checkAndLogCurrentPosition();
-            }, 60 * 1000);
-        }
-
-        function stopAutoLogging() {
-            if (autoLoggingTimer) {
-                clearInterval(autoLoggingTimer);
-                autoLoggingTimer = null;
-                console.log("【自動ログ】自動稲刈りジャーナル記録を停止しました。");
-            }
-        }
-
-        function checkAndLogCurrentPosition() {
-            if (!window.currentLatLng) {
-                console.log("【自動ログ】現在地がまだ取得できていません。");
-                return;
-            }
-
-            let latLng = window.currentLatLng;
-            let matchedPolygonNo = null;
-
-            if (window.currentGeojsonObj && window.currentGeojsonObj.features) {
-                window.currentGeojsonObj.features.forEach(feature => {
-                    let tempLayer = L.geoJSON(feature);
-                    let bounds = tempLayer.getBounds();
-
-                    if (bounds.contains(latLng)) {
-                        let p = feature.properties || {};
-                        matchedPolygonNo = p["東西列No"] || p["name"] || "不明な区画";
-                    }
-                });
-            }
-
-            if (matchedPolygonNo) {
-                let now = new Date();
-                let timeString = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                let dateString = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
-
-                console.log(`【自動ログ記録】 日付: ${dateString}, 時間: ${timeString}, 東西列No: ${matchedPolygonNo}`);
-            } else {
-                console.log("【自動ログ】現在、どの圃場ポリゴンにも含まれていません（移動中など）。");
-            }
-        }
-
-        // ==========================================
-        // 【追跡終了】GPSによる現在地の追跡を停止する処理
-        // ==========================================
         function stopTracking() {
-            stopAutoLogging();
             if (watchId !== null) {
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
                 alert("追跡を終了しました。");
-            } else {
-                alert("現在、追跡は行われていません。");
             }
             if (currentMarker) {
                 map.removeLayer(currentMarker);
