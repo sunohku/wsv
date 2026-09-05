@@ -130,7 +130,7 @@
             background-color: #1b5e20;
         }
 
-        /* 選択ボタンのデザイン（「現在地」同様の単発押しボタン） */
+        /* 選択ボタンのデザイン */
         .btn-select {
             background-color: #007bff;
         }
@@ -196,9 +196,9 @@
                 <span>時間</span>
                 <input type="time" id="global-time">
             </div>
-            <!-- 「現在地」ボタンの横に「選択」と「更新」ボタンを同じ仕様で配置 -->
+            <!-- 「現在地」ボタンの横に「選択」と「更新」ボタンを配置 -->
             <button class="action-btn btn-current-loc" onclick="saveCurrentLocationCsv()">現在地</button>
-            <button class="action-btn btn-select" onclick="selectCurrentLocationPolygon()">選択</button>
+            <button class="action-btn btn-select" onclick="alert('地図上の圃場をクリックして選択してください。')">選択</button>
             <button class="action-btn btn-update" onclick="updateSelectedRecord()">更新</button>
         </div>
 
@@ -431,75 +431,11 @@
         }
 
         // ==========================================
-        // 【「選択」ボタンの処理】「現在地」と同様に1回押すだけで、現在のGPS位置が含まれる圃場を自動選択する
-        // ==========================================
-        function selectCurrentLocationPolygon() {
-            let lat = (window.currentLatLng && window.currentLatLng.lat) ? window.currentLatLng.lat : "";
-            let lng = (window.currentLatLng && window.currentLatLng.lng) ? window.currentLatLng.lng : "";
-
-            if (!lat || !lng) {
-                alert("現在地がまだ取得できていません。「追跡開始」を押してGPSの位置情報を取得してください。");
-                return;
-            }
-
-            if (!currentGeojsonObj || !currentGeojsonObj.features) {
-                alert("圃場データが読み込まれていません。");
-                return;
-            }
-
-            let foundFeature = null;
-            let foundLayer = null;
-
-            // 既存の選択状態をリセット
-            if (currentlySelectedLayer) {
-                let prevP = currentlySelectedLayer.feature.properties;
-                let prevHinmoku = prevP.hinmoku || prevP.品種名 || prevP.品目 || prevP.CD || "";
-                let prevColor = getColorByHinmoku(prevHinmoku);
-                let prevUpdated = (prevP.稲刈り && prevP.稲刈り !== "");
-                currentlySelectedLayer.setStyle({
-                    color: prevUpdated ? "#2c3e50" : prevColor,
-                    fillColor: prevColor,
-                    fillOpacity: 0.6,
-                    weight: prevUpdated ? 3 : 1.5
-                });
-                currentlySelectedLayer = null;
-            }
-
-            // 現在地が含まれるレイヤーを探索
-            geojsonLayer.eachLayer(layer => {
-                let tempLayer = L.geoJSON(layer.feature);
-                let bounds = tempLayer.getBounds();
-                if (bounds.contains(window.currentLatLng)) {
-                    foundFeature = layer.feature;
-                    foundLayer = layer;
-                }
-            });
-
-            if (foundLayer && foundFeature) {
-                let p = foundFeature.properties || {};
-                let matchedName = p["東西列No"] || p["name"] || p["hinmoku"] || "対象圃場";
-
-                // 赤枠でハイライト
-                foundLayer.setStyle({
-                    color: '#e74c3c',
-                    fillColor: '#e74c3c',
-                    fillOpacity: 0.7,
-                    weight: 3
-                });
-                currentlySelectedLayer = foundLayer;
-
-                alert(`現在地にある圃場を選択しました！\n【圃場】${matchedName}`);
-            } else {
-                alert("現在地が含まれる圃場が見つかりませんでした（圃場外にいます）。");
-            }
-        }
-
-        // ==========================================
         // 【「更新」ボタンの処理】選択された圃場の「稲刈り」にスラッシュ区切りの日付を書き込み、全上書き用ファイルとして自動ダウンロード
         // ==========================================
         function updateSelectedRecord() {
             if (!currentlySelectedLayer) {
-                alert("圃場が選択されていません。「選択」ボタンを押すか、地図上の圃場をクリックして選択してください。");
+                alert("圃場が選択されていません。地図上の圃場をクリックして選択してください。");
                 return;
             }
 
