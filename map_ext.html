@@ -459,31 +459,35 @@
                 alert("現在地がまだ取得できていません。「追跡開始」を押してGPSの位置情報を取得してください。");
                 return;
             }
-
             if (!dateVal || !timeVal) {
                 alert("日付と時間を正しく入力してください。");
                 return;
             }
 
-            let dateTimeStr = `${dateVal.replace(/-/g, '/')} ${timeVal}`;
+            let dateTimeStr = `${dateVal.replace(/-/g, '')} ${timeVal}`;
+
+            // ★ ここでファイル名・ID用の文字列を作成（例: 20260905_1255）
+            // 日付のハイフンを外し、時刻のコロンを削るまたはアンダーバーで繋ぐなど、お好みの形式に合わせられます
+            let cleanDate = dateVal.replace(/-/g, '');
+            let cleanTime = timeVal.replace(/:/g, '');
+            let customDocId = `${cleanDate}_${cleanTime}`; // 例: 20260905_1255
 
             try {
-                // Firebaseの初期化（まだしていなかった場合の保険）
                 if (!firebase.apps.length) {
                     const firebaseConfig = {
-                        apiKey: "AIzaSyCCMQ-1VdU-De9veqkh1UEnaWQq71dgG-U",
+                        apiKey: "AIzaSyCCM0-1Vdu-De9eqkh1UNawQQ71dg-U",
                         authDomain: "my-map-log-5e3bd.firebaseapp.com",
                         projectId: "my-map-log-5e3bd",
-                        storageBucket: "my-map-log-5e3bd.firebasestorage.app",
+                        storageBucket: "my-map-log-5e3bd.appspot.com",
                         messagingSenderId: "52246773478",
-                        appId: "1:52246773478:web:dc5eb04d5e52d49422c527"
+                        appId: "1:52246773478:web:dc5eb04d5e52d4922c527"
                     };
                     firebase.initializeApp(firebaseConfig);
                 }
                 const db = firebase.firestore();
 
-                // Firestoreの "locationLogs" コレクションにデータを追加
-                await db.collection("locationLogs").add({
+                // ★ .add() の代わりに .doc(customDocId).set() を使ってカスタムIDを指定して保存
+                await db.collection("locationLogs").doc(customDocId).set({
                     latitude: lat,
                     longitude: lng,
                     date: dateVal,
@@ -492,8 +496,8 @@
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
 
-                console.log(`【Firebase保存成功】 緯度:${lat}, 経度:${lng}, 日時:${dateTimeStr}`);
-                alert("現在地をFirebaseに保存しました！");
+                console.log(`[Firebase保存成功] ID: ${customDocId}, 緯度: ${lat}, 経度: ${lng}`);
+                alert("現在地をFirebaseに保存しました！（ID: " + customDocId + "）");
             } catch (e) {
                 alert("Firebaseへの保存に失敗しました: " + e.message);
                 console.error(e);
