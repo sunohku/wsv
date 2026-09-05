@@ -109,7 +109,6 @@
             background-color: #2e7d32;
         }
         
-        /* 選択ボタン（アクティブ時は色を変える） */
         .btn-select {
             background-color: #007bff;
         }
@@ -171,8 +170,9 @@
                 <input type="time" id="global-time">
             </div>
             <button class="action-btn btn-current-loc" onclick="saveCurrentLocationCsv()">現在地</button>
-            <!-- 余計なアラートを削除し、クリックで選択モードをON/OFFするボタンに変更 -->
+            <!-- 選択ボタン（アラートなしでモード切替） -->
             <button id="selectBtn" class="action-btn btn-select" onclick="toggleSelectMode()">選択</button>
+            <!-- 更新ボタン：ファイル保存ダイアログを出さず、メモリ上のデータを書き換えて即座に地図を更新 -->
             <button class="action-btn btn-update" onclick="updateSelectedRecord()">更新</button>
         </div>
     </div>
@@ -183,7 +183,7 @@
 
     <script>
         let currentlySelectedLayer = null; 
-        let isSelectMode = false; // 選択モードの状態管理
+        let isSelectMode = false;
 
         window.addEventListener('DOMContentLoaded', async () => {
             const now = new Date();
@@ -290,14 +290,13 @@
                     let layerId = L.stamp(layer);
                     window.featureMap[layerId] = { feature: feature, layer: layer };
 
-                    // 圃場をクリックしたときの処理
+                    // 圃場をクリックしたときの選択処理
                     layer.on('click', function () {
                         let p = feature.properties;
                         let hinmoku = p.hinmoku || p.品種名 || p.品目 || p.CD || "";
                         let baseColor = getColorByHinmoku(hinmoku);
                         let isUpdated = (p.稲刈り && p.稲刈り !== "");
 
-                        // 既存の選択を解除
                         if (currentlySelectedLayer && currentlySelectedLayer !== layer) {
                             let prevP = currentlySelectedLayer.feature.properties;
                             let prevHinmoku = prevP.hinmoku || prevP.品種名 || prevP.品目 || prevP.CD || "";
@@ -364,7 +363,6 @@
             return "#b0bec5";
         }
 
-        // 「選択」ボタンのクリック切り替え（アラートを出さずにモード切替のみ）
         function toggleSelectMode() {
             isSelectMode = !isSelectMode;
             const btn = document.getElementById('selectBtn');
@@ -375,19 +373,22 @@
             }
         }
 
-        // 「更新」ボタン：選択された圃場のプロパティに日付を書き込み、画面反映とファイルダウンロードを行う
+        // ==========================================
+        // 【更新ボタンの処理】ダイアログを出さず、メモリ上のGeoJSONデータの「稲刈り」を書き換え、地図上を即座に再描画する
+        // ==========================================
         function updateSelectedRecord() {
             if (!currentlySelectedLayer) {
                 alert("圃場が選択されていません。地図上の圃場をクリックして選択してください。");
                 return;
             }
 
-            const dateInputVal = document.getElementById('global-date').value; 
+            const dateInputVal = document.getElementById('global-date').value; // 例: 2026-09-05
             if (!dateInputVal) {
                 alert("日付を正しく入力してください。");
                 return;
             }
 
+            // ハイフンをスラッシュに変換（2026-09-05 -> 2026/09/05）
             const formattedDate = dateInputVal.replace(/-/g, '/');
 
             // 選択されたレイヤーのプロパティを書き換え
@@ -395,23 +396,11 @@
             p["稲刈り"] = formattedDate;
 
             if (currentGeojsonObj) {
-                try {
-                    // 自動ダウンロード処理
-                    let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentGeojsonObj, null, 2));
-                    let downloadAnchor = document.createElement('a');
-                    downloadAnchor.setAttribute("href", dataStr);
-                    downloadAnchor.setAttribute("download", "品目5_4326.geojson");
-                    document.body.appendChild(downloadAnchor);
-                    downloadAnchor.click();
-                    downloadAnchor.remove();
-
-                    // 即座に地図上の見た目を再描画して反映
-                    renderGeoJson(currentGeojsonObj);
-
-                    alert(`選択した圃場の「稲刈り」を ${formattedDate} に更新しました！`);
-                } catch (e) {
-                    alert("ファイルの生成に失敗しました: " + e.message);
-                }
+                // ファイル保存ダイアログは出さず、メモリ上の全データを更新して地図を即時再描画
+                renderGeoJson(currentGeojsonObj);
+                alert(`選択した圃場の「稲刈り」を ${formattedDate} に更新しました！`);
+            } else {
+                alert("更新しました！");
             }
         }
 
