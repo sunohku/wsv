@@ -170,9 +170,9 @@
                 <input type="time" id="global-time">
             </div>
             <button class="action-btn btn-current-loc" onclick="saveCurrentLocationCsv()">現在地</button>
-            <!-- 選択ボタン -->
+            <!-- 選択ボタン（アラートなしでモード切替） -->
             <button id="selectBtn" class="action-btn btn-select" onclick="toggleSelectMode()">選択</button>
-            <!-- 更新ボタン（ダイアログを出さず、メモリ上だけで値を書き換えて地図を更新） -->
+            <!-- 更新ボタン：ファイル保存ダイアログを出さず、メモリ上のデータを書き換えて即座に地図を更新 -->
             <button type="button" class="action-btn btn-update" onclick="updateSelectedRecord()">更新</button>
         </div>
     </div>
@@ -182,7 +182,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        let currentlySelectedLayerId = null; // 選択されたレイヤーのIDを保持
+        let currentlySelectedLayer = null; 
         let isSelectMode = false;
 
         window.addEventListener('DOMContentLoaded', async () => {
@@ -270,8 +270,7 @@
 
         function renderGeoJson(geojson) {
             if (geojsonLayer) map.removeLayer(geojsonLayer);
-            window.featureMap = {};
-            currentlySelectedLayerId = null;
+            currentlySelectedLayer = null;
 
             geojsonLayer = L.geoJSON(geojson, {
                 style: function (feature) {
@@ -287,42 +286,34 @@
                     };
                 },
                 onEachFeature: function (feature, layer) {
-                    let layerId = L.stamp(layer);
-                    window.featureMap[layerId] = { feature: feature, layer: layer };
-
                     // 圃場をクリックしたときの選択処理
                     layer.on('click', function () {
-                        // 選択モードがオフのときは何もしない（またはお好みで。ここではクリックで常時選択できるようにしています）
                         let p = feature.properties;
                         let hinmoku = p.hinmoku || p.品種名 || p.品目 || p.CD || "";
                         let baseColor = getColorByHinmoku(hinmoku);
                         let isUpdated = (p.稲刈り && p.稲刈り !== "");
 
-                        // 以前に選択されていたレイヤーのスタイルを戻す
-                        if (currentlySelectedLayerId && currentlySelectedLayerId !== layerId) {
-                            let prevItem = window.featureMap[currentlySelectedLayerId];
-                            if (prevItem) {
-                                let prevP = prevItem.feature.properties;
-                                let prevHinmoku = prevP.hinmoku || prevP.品種名 || prevP.品目 || prevP.CD || "";
-                                let prevColor = getColorByHinmoku(prevHinmoku);
-                                let prevUpdated = (prevP.稲刈り && prevP.稲刈り !== "");
-                                prevItem.layer.setStyle({
-                                    color: prevUpdated ? "#2c3e50" : prevColor,
-                                    fillColor: prevColor,
-                                    fillOpacity: 0.6,
-                                    weight: prevUpdated ? 3 : 1.5
-                                });
-                            }
+                        if (currentlySelectedLayer && currentlySelectedLayer !== layer) {
+                            let prevP = currentlySelectedLayer.feature.properties;
+                            let prevHinmoku = prevP.hinmoku || prevP.品種名 || prevP.品目 || prevP.CD || "";
+                            let prevColor = getColorByHinmoku(prevHinmoku);
+                            let prevUpdated = (prevP.稲刈り && prevP.稲刈り !== "");
+                            currentlySelectedLayer.setStyle({
+                                color: prevUpdated ? "#2c3e50" : prevColor,
+                                fillColor: prevColor,
+                                fillOpacity: 0.6,
+                                weight: prevUpdated ? 3 : 1.5
+                            });
                         }
 
-                        if (currentlySelectedLayerId === layerId) {
+                        if (currentlySelectedLayer === layer) {
                             layer.setStyle({
                                 color: isUpdated ? "#2c3e50" : baseColor,
                                 fillColor: baseColor,
                                 fillOpacity: 0.6,
                                 weight: isUpdated ? 3 : 1.5
                             });
-                            currentlySelectedLayerId = null;
+                            currentlySelectedLayer = null;
                         } else {
                             layer.setStyle({
                                 color: '#e74c3c',
@@ -330,7 +321,7 @@
                                 fillOpacity: 0.7,
                                 weight: 3
                             });
-                            currentlySelectedLayerId = layerId;
+                            currentlySelectedLayer = layer;
                         }
                     });
                 }
@@ -379,10 +370,10 @@
         }
 
         // ==========================================
-        // 【更新ボタンの処理】ファイル保存ダイアログを出さず、メモリ上のみで「稲刈り」を更新して即時反映
+        // 【更新ボタンの処理】ファイル保存ダイアログを出さず、メモリ上のデータ書き換えと再描画のみ実行
         // ==========================================
         function updateSelectedRecord() {
-            if (!currentlySelectedLayerId) {
+            if (!currentlySelectedLayer) {
                 alert("圃場が選択されていません。地図上の圃場をクリックして選択してください。");
                 return;
             }
@@ -396,30 +387,17 @@
             // ハイフンをスラッシュに変換（2026-09-05 -> 2026/09/05）
             const formattedDate = dateInputVal.replace(/-/g, '/');
 
-            let item = window.featureMap[currentlySelectedLayerId];
-            if (!item) {
-                alert("選択された圃場データが見つかりません。");
-                return;
-            }
-
-            // メモリ上のプロパティを書き換え
-            let p = item.feature.properties;
+            // 選択されたレイヤーのプロパティを書き換え
+            let p = currentlySelectedLayer.feature.properties;
             p["稲刈り"] = formattedDate;
 
-            // スタイルの更新（更新済みは枠線を濃いグレー・太くする）
-            let hinmoku = p.hinmoku || p.品種名 || p.品目 || p.CD || "";
-            let baseColor = getColorByHinmoku(hinmoku);
-            item.layer.setStyle({
-                color: "#2c3e50",
-                fillColor: baseColor,
-                fillOpacity: 0.6,
-                weight: 3
-            });
-
-            // 選択状態を解除
-            currentlySelectedLayerId = null;
-
-            alert(`選択した圃場の「稲刈り」を ${formattedDate} に更新しました！`);
+            if (currentGeojsonObj) {
+                // ファイル保存ダイアログは一切出さず、メモリ上のデータを元に地図を再描画
+                renderGeoJson(currentGeojsonObj);
+                alert(`選択した圃場の「稲刈り」を ${formattedDate} に更新しました！`);
+            } else {
+                alert("更新しました！");
+            }
         }
 
         function updateLabels() {
