@@ -7,14 +7,12 @@
     <title>リアルタイム追跡 地理院地図 (シンプル版)</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
-
     <!-- QRコード生成用のライブラリを読み込み -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
     <!-- Firebaseの読み込み（Compat版） -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
-
 
     <!-- ★firebaseの初期化 -->
     <script>
@@ -30,10 +28,6 @@
         const db = firebase.firestore();
     </script>
 
-
-
-
-
     <style>
         html,
         body,
@@ -41,6 +35,24 @@
             height: 100%;
             margin: 0;
             padding: 0;
+        }
+
+        /* ==========================================
+        // 【デザイン設定：進行方向を向く矢印マーカー】
+        // スマホの向き（進行方向）に合わせて回転する三角形のマーカーデザインです。
+        // ========================================== */
+        .arrow-marker {
+            background: transparent;
+            border: none;
+        }
+        .arrow-icon-inner {
+            width: 0;
+            height: 0;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-bottom: 24px solid #1976d2; /* 矢印の色（青） */
+            transform-origin: 50% 70%;
+            filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
         }
 
         /* ==========================================
@@ -298,7 +310,6 @@
         // ==========================================
         function getColorByHinmoku(hinmoku) {
             if (!hinmoku) return "#e0e0e0";
-
             let val = String(hinmoku).trim();
 
             const colorMap = {
@@ -329,7 +340,6 @@
             };
 
             if (colorMap[val]) return colorMap[val];
-
             if (val.includes("てんたかく")) return "#64b5f6";
             if (val.includes("コシヒカリ")) return "#8bc34a";
             if (val.includes("富富富")) return "#e040fb";
@@ -395,7 +405,7 @@
         }
 
         // ==========================================
-        // 【追跡開始】GPSで現在地を取得し、地図の中心を移動・マークする処理
+        // 【追跡開始】GPSで現在地を取得し、地図の中心を移動・進行方向を向く矢印でマークする処理
         // ==========================================
         function startTracking() {
             if (!navigator.geolocation) {
@@ -408,19 +418,29 @@
             }
 
             alert("位置情報の取得を開始します。GPSの電波状況をご確認ください。");
-
             startAutoLogging();
 
             watchId = navigator.geolocation.watchPosition(
                 function (position) {
                     var lat = position.coords.latitude;
                     var lng = position.coords.longitude;
+                    var heading = position.coords.heading; // 進行方向 (0〜360度)
 
                     window.currentLatLng = { lat: lat, lng: lng };
 
+                    // 進行方向（heading）がある場合は矢印をその角度に回転させる
+                    var rotationStyle = (heading !== null && !isNaN(heading)) ? `transform: rotate(${heading}deg);` : '';
+                    var arrowIcon = L.divIcon({
+                        className: 'arrow-marker',
+                        html: `<div class="arrow-icon-inner" style="${rotationStyle}"></div>`,
+                        iconSize: [30, 30],
+                        iconAnchor: [15, 15]
+                    });
+
                     if (!currentMarker) {
-                        currentMarker = L.marker([lat, lng]).addTo(map).bindPopup("現在地").openPopup();
+                        currentMarker = L.marker([lat, lng], { icon: arrowIcon }).addTo(map).bindPopup("現在地").openPopup();
                     } else {
+                        currentMarker.setIcon(arrowIcon);
                         currentMarker.setLatLng([lat, lng]);
                     }
 
@@ -446,7 +466,7 @@
         }
 
         // ==========================================
-        // 【現在地Firebase保存機能】サーバーの代わりにFirestoreへ直接保存
+        // 【現在地Firebase保存機能】秒単位の一意なID（YYYYMMDD_HHMMSS）でFirestoreへ保存
         // ==========================================
         async function saveCurrentLocationCsv() {
             let lat = (window.currentLatLng && window.currentLatLng.lat) ? window.currentLatLng.lat : "";
@@ -464,13 +484,19 @@
                 return;
             }
 
-            let dateTimeStr = `${dateVal.replace(/-/g, '')} ${timeVal}`;
+            // 秒単位まで含めた一意なカスタムIDを生成（例: 20260905_150830）
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
 
-            // ★ ここでファイル名・ID用の文字列を作成（例: 20260905_1255）
-            // 日付のハイフンを外し、時刻のコロンを削るまたはアンダーバーで繋ぐなど、お好みの形式に合わせられます
-            let cleanDate = dateVal.replace(/-/g, '');
-            let cleanTime = timeVal.replace(/:/g, '');
-            let customDocId = `${cleanDate}_${cleanTime}`; // 例: 20260905_1255
+            let cleanDate = `${year}${month}${day}`;
+            let cleanTime = `${hours}${minutes}${seconds}`;
+            let customDocId = `${cleanDate}_${cleanTime}`;
+            let dateTimeStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 
             try {
                 if (!firebase.apps.length) {
@@ -486,7 +512,6 @@
                 }
                 const db = firebase.firestore();
 
-                // ★ .add() の代わりに .doc(customDocId).set() を使ってカスタムIDを指定して保存
                 await db.collection("locationLogs").doc(customDocId).set({
                     latitude: lat,
                     longitude: lng,
@@ -503,7 +528,6 @@
                 console.error(e);
             }
         }
-
 
         // --- 自動ジャーナル記録 ---
         let autoLoggingTimer = null;
@@ -544,8 +568,7 @@
 
                     if (bounds.contains(latLng)) {
                         let p = feature.properties || {};
-                        let colNo = p["東西列No"] || p["name"] || "不明な区画";
-                        matchedPolygonNo = colNo;
+                        matchedPolygonNo = p["東西列No"] || p["name"] || "不明な区画";
                     }
                 });
             }
