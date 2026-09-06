@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>圃場マップ（基本表示）</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        html, body, #map {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // 1. 地図の初期化（中心地は富山県高岡市付近、ズームレベル14）
+        const map = L.map('map').setView([36.746, 137.016], 14);
+
+        // 2. 地理院タイル（空中写真）の追加
+        L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{y}/{x}.jpg', {
+            maxZoom: 18,
+            attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">地理院タイル（空中写真）</a>'
+        }).addTo(map);
+
+        // 3. 品種・品目に応じた色分け設定の関数
+        function getFeatureColor(itemCode) {
+            switch (String(itemCode)) {
+                case '1': return '#ff4136'; // 例：赤系
+                case '2': return '#2ecc40'; // 例：緑系
+                case '3': return '#0074dD'; // 例：青系
+                default:  return '#ff851b'; // その他：オレンジ系
+            }
+        }
+
+        // 4. GeoJSONデータの読み込みと描画
+        fetch('品目5_4326.geojson')
+            .then(response => response.json())
+            .then(data => {
+                const geoJsonLayer = L.geoJson(data, {
+                    style: function(feature) {
+                        // プロパティに合わせて適宜キー名（例: item_code 等）を変更してください
+                        const itemCode = feature.properties.item_code || feature.properties.品目コード || 0;
+                        const fillColor = getFeatureColor(itemCode);
+
+                        return {
+                            color: '#ffffff',       // 枠線の色（白）
+                            weight: 2,              // 枠線の太さ
+                            fillColor: fillColor,   // 塗りつぶしの色
+                            fillOpacity: 0.5        // 塗りつぶしの不透明度
+                        };
+                    },
+                    onEachFeature: function(feature, layer) {
+                        // 圃場名や情報をポップアップで表示
+                        let popupContent = "<b>圃場情報</b><br>";
+                        if (feature.properties) {
+                            for (let key in feature.properties) {
+                                popupContent += `${key}: ${feature.properties[key]}<br>`;
+                            }
+                        }
+                        layer.bindPopup(popupContent);
+                    }
+                }).addTo(map);
+
+                // 読み込んだGeoJSONの範囲に地図の表示を合わせる
+                if (geoJsonLayer.getBounds().isValid()) {
+                    map.fitBounds(geoJsonLayer.getBounds());
+                }
+            })
+            .catch(error => {
+                console.error('GeoJSONの読み込みに失敗しました:', error);
+                alert('GeoJSONファイルの読み込みに失敗しました。ファイル名や配置場所を確認してください。');
+            });
+    </script>
+</body>
+</html>
