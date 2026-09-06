@@ -325,18 +325,45 @@
                         let p = feature.properties || {};
                         let rawValue = selectedKey ? p[selectedKey] : null;
 
-                        if (rawValue === null || rawValue === undefined || rawValue === "null" || String(rawValue).trim() === "") {
-                            return;
+                        let labelText = "";
+                        let textColor = "#ffffff";
+
+                        // 選択された項目の値があるかどうかをチェック
+                        let hasValue = (rawValue !== null && rawValue !== undefined && rawValue !== "null" && String(rawValue).trim() !== "");
+
+                        if (selectedKey === "東西列No") {
+                            // 「東西列No」が選ばれているときは、常に東西列Noをレモンイエローで表示
+                            if (hasValue) {
+                                labelText = String(rawValue);
+                                textColor = "#ffff33";
+                            } else {
+                                return;
+                            }
+                        } else {
+                            // 日付などの他の項目が選ばれている場合
+                            if (hasValue) {
+                                // データがある場所：そのデータの文字（白）
+                                labelText = String(rawValue);
+                                textColor = "#ffffff";
+                            } else {
+                                // データがない（Nullの）場所：東西列Noをレモンイエローで併記
+                                let fallbackVal = p["東西列No"];
+                                if (fallbackVal !== null && fallbackVal !== undefined && String(fallbackVal).trim() !== "") {
+                                    labelText = String(fallbackVal);
+                                    textColor = "#ffff33";
+                                } else {
+                                    return;
+                                }
+                            }
                         }
 
-                        let labelText = String(rawValue);
                         let tempLayer = L.geoJSON(feature);
                         let bounds = tempLayer.getBounds();
                         if (bounds && bounds.isValid()) {
                             let center = bounds.getCenter();
                             let labelIcon = L.divIcon({
                                 className: 'polygon-label',
-                                html: `<div style="font-size:11px; font-weight:bold; color:#000; text-shadow: 1px 1px 2px #fff, -1px -1px 2px #fff, 1px -1px 2px #fff, -1px 1px 2px #fff; white-space:nowrap; text-align:center; pointer-events:none;">${labelText}</div>`,
+                                html: `<div style="font-size:11px; font-weight:bold; color:${textColor}; text-shadow: 1px 1px 2px #000, -1px -1px 2px #000, 1px -1px 2px #000, -1px 1px 2px #000; white-space:nowrap; text-align:center; pointer-events:none;">${labelText}</div>`,
                                 iconSize: [60, 20],
                                 iconAnchor: [30, 10]
                             });
@@ -362,12 +389,11 @@
         // 【事務所移動】事務所ボタンを押したときの処理（指定の拡大図位置）
         // ==========================================
         function moveToOffice() {
-            var officeLat = 36.676550;
-            var officeLng = 137.019860;
-
+            var officeLat = 36.676660;
+            var officeLng = 137.019550;
 
             if (!officeMarker) {
-                officeMarker = L.marker([officeLat, officeLng]).addTo(map).bindPopup("ファーム貞杉").openPopup();
+                officeMarker = L.marker([officeLat, officeLng]).addTo(map).bindPopup("事務所").openPopup();
             } else {
                 officeMarker.setLatLng([officeLat, officeLng]);
             }
