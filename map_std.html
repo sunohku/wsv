@@ -389,11 +389,11 @@
         // 【事務所移動】事務所ボタンを押したときの処理（指定の拡大図位置）
         // ==========================================
         function moveToOffice() {
-            var officeLat = 36.676660;
-            var officeLng = 137.019650;
+            var officeLat = 36.676550;
+            var officeLng = 137.019850;
 
             if (!officeMarker) {
-                officeMarker = L.marker([officeLat, officeLng]).addTo(map).bindPopup("事務所").openPopup();
+                officeMarker = L.marker([officeLat, officeLng]).addTo(map).bindPopup("ファーム貞杉").openPopup();
             } else {
                 officeMarker.setLatLng([officeLat, officeLng]);
             }
