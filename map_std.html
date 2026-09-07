@@ -6,10 +6,10 @@
     <!-- スマホで画面が拡大しすぎたり崩れたりしないためのビューポート設定 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     
-    <!-- ★ここを追加：iOS(iPhone)でホーム画面から開いたときにフル画面（アプリ風）にする設定 -->
+    <!-- iOS(iPhone)でホーム画面から開いたときにフル画面（アプリ風）にする設定 -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>圃場マップ（フル画面対応・シンプル版）</title>
+    <title>圃場マップ（ポップアップ対応版）</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
@@ -267,6 +267,25 @@
                         fillOpacity: 0.6,
                         weight: 1.5
                     };
+                },
+                onEachFeature: function (feature, layer) {
+                    let p = feature.properties || {};
+                    
+                    // 表示したい7項目を指定順に並べる
+                    let targetKeys = ["東西列No", "名前", "品目", "面積", "田植え", "稲刈り", "OBJECTID"];
+                    
+                    let html = `<div style="font-size: 13px; line-height: 1.6; min-width: 160px;">`;
+                    targetKeys.forEach(key => {
+                        let val = p[key];
+                        // 値がない・空欄の場合は「未入力」とする（OBJECTID以外）
+                        if (val === undefined || val === null || String(val).trim() === "") {
+                            val = (key === "OBJECTID") ? "-" : "<span style='color: #aaa;'>未入力</span>";
+                        }
+                        html += `<div><strong>${key}</strong>：${val}</div>`;
+                    });
+                    html += `</div>`;
+
+                    layer.bindPopup(html);
                 }
             });
 
