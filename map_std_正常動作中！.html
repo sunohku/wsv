@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>圃場マップ（複数選択・日付データ編集版）</title>
+    <title>圃場マップ（基本表示・シンプル版）</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
     <style>
@@ -71,31 +71,6 @@
         }
 
         /* ==========================================
-        // 【デザイン設定：編集用パネル（追加）】
-        // ========================================== */
-        #edit-panel {
-            margin-top: 8px;
-            padding-top: 8px;
-            border-top: 1px solid #ddd;
-            display: none; /* 初期状態は非表示（選択すると出る） */
-        }
-
-        .save-btn {
-            background-color: #d32f2f;
-            color: white;
-            border: none;
-            padding: 5px 12px;
-            border-radius: 4px;
-            font-weight: bold;
-            cursor: pointer;
-            height: 31px;
-            font-size: 13px;
-        }
-        .save-btn:hover {
-            background-color: #9a0007;
-        }
-
-        /* ==========================================
         // 【デザイン設定：ボタン類（緑・青）】
         // ========================================== */
         .current-location-btn {
@@ -152,7 +127,7 @@
         <div class="control-row">
             <div class="control-group">
                 <span>日付</span>
-                <input type="date" id="global-date" onchange="onDateChange()">
+                <input type="date" id="global-date">
             </div>
             <div class="control-group">
                 <span>時間</span>
@@ -162,20 +137,6 @@
                 <button class="current-location-btn" onclick="moveToCurrentLocation()">現在地</button>
             </div>
         </div>
-
-        <!-- 【追加】3段目：選択した圃場のデータを一括変更するパネル -->
-        <div id="edit-panel">
-            <div style="font-weight: bold; color: #333; margin-bottom: 4px;" id="selected-count-text">選択中: 0 圃場</div>
-            <div class="control-row">
-                <div class="control-group" style="flex: 1;">
-                    <span id="edit-target-label">値を変更</span>
-                    <input type="text" id="edit-value-input" placeholder="入力してください">
-                </div>
-                <div class="control-group" style="justify-content: flex-end;">
-                    <button class="save-btn" onclick="saveSelectedData()">反映する</button>
-                </div>
-            </div>
-        </div>
     </div>
 
     <div id="map"></div>
@@ -183,23 +144,6 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        var map = L.map('map').setView([36.747, 137.016], 14);
-
-        var gsiLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
-            attribution: "地理院タイル（航空写真）",
-            maxZoom: 18,
-            zIndex: 1
-        }).addTo(map);
-
-        var currentMarker = null;
-        var officeMarker = null;
-        var geojsonLayer = null;
-        var currentGeojsonObj = null;
-        var labelLayerGroup = L.layerGroup();
-        
-        // 【追加】選択されたポリゴン（feature）を記憶する配列
-        var selectedFeatures = [];
-
         // ==========================================
         // 【初期化処理】ページ読み込み完了時に自動実行されます
         // ==========================================
@@ -220,6 +164,21 @@
                 map.invalidateSize();
             }, 100);
         });
+
+        // 地図の初期化（地理院タイル：航空写真）
+        var map = L.map('map').setView([36.747, 137.016], 14);
+
+        var gsiLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
+            attribution: "地理院タイル（航空写真）",
+            maxZoom: 18,
+            zIndex: 1
+        }).addTo(map);
+
+        var currentMarker = null;
+        var officeMarker = null;
+        var geojsonLayer = null;
+        var currentGeojsonObj = null;
+        var labelLayerGroup = L.layerGroup();
 
         // ==========================================
         // 【GeoJSON読み込み】サーバーからポリゴンデータ(geojson)を取得する処理
@@ -280,34 +239,12 @@
                     let p = feature.properties || {};
                     let hinmoku = p.hinmoku || p.品種名 || p.品目 || p.CD || "";
                     let baseColor = getColorByHinmoku(hinmoku);
-                    
-                    // 【追加】選択されているポリゴンなら赤枠（太さ4）にする
-                    let isSelected = selectedFeatures.includes(feature);
                     return {
-                        color: isSelected ? '#ff0000' : baseColor,
+                        color: baseColor,
                         fillColor: baseColor,
                         fillOpacity: 0.6,
-                        weight: isSelected ? 4 : 1.5
+                        weight: 1.5
                     };
-                },
-                onEachFeature: function (feature, layer) {
-                    // 【追加】ポリゴンをタップ（クリック）したときの処理（複数選択対応）
-                    layer.on('click', function (e) {
-                        let index = selectedFeatures.indexOf(feature);
-                        if (index > -1) {
-                            // 既に選択されていたら外す
-                            selectedFeatures.splice(index, 1);
-                        } else {
-                            // 選択されていなかったら追加する
-                            selectedFeatures.push(feature);
-                        }
-                        
-                        // 選択状態が変わったので、スタイルを再適用して見た目を更新
-                        geojsonLayer.setStyle(geojsonLayer.options.style);
-                        
-                        // 編集パネルの表示/非表示を切り替え
-                        updateEditPanel();
-                    });
                 }
             });
 
@@ -320,62 +257,6 @@
                 map.fitBounds(bounds);
             }
             map.invalidateSize();
-        }
-
-        // ==========================================
-        // 【追加】選択パネルの表示状態を更新する処理
-        // ==========================================
-        function updateEditPanel() {
-            const editPanel = document.getElementById('edit-panel');
-            const countText = document.getElementById('selected-count-text');
-            const targetLabel = document.getElementById('edit-target-label');
-            const selectedKey = document.getElementById('labelFieldSelect').value;
-
-            if (selectedFeatures.length > 0) {
-                editPanel.style.display = 'block';
-                countText.innerText = `選択中: ${selectedFeatures.length} 圃場`;
-                targetLabel.innerText = `「${selectedKey || '項目'}」の値を変更`;
-            } else {
-                editPanel.style.display = 'none';
-            }
-        }
-
-        // ==========================================
-        // 【追加】「反映する」ボタンを押したときの処理
-        // ==========================================
-        function saveSelectedData() {
-            const selectedKey = document.getElementById('labelFieldSelect').value;
-            const newValue = document.getElementById('edit-value-input').value;
-            const currentDate = document.getElementById('global-date').value;
-
-            if (!selectedKey) {
-                alert("変更するラベル項目を選択してください。");
-                return;
-            }
-
-            // 選択されているすべてのポリゴンのプロパティを書き換える
-            selectedFeatures.forEach(feature => {
-                if (!feature.properties) feature.properties = {};
-                
-                // 例として選択中の項目に値を代入（もし日付ごとに管理したい場合は `feature.properties[currentDate] = ...` のように拡張できます）
-                feature.properties[selectedKey] = newValue;
-            });
-
-            alert(`${selectedFeatures.length}個の圃場の「${selectedKey}」を "${newValue}" に変更しました！`);
-
-            // 再描画してラベルや色を更新
-            renderGeoJson(currentGeojsonObj);
-            updateEditPanel();
-        }
-
-        // ==========================================
-        // 【追加】日付を変更したときの処理
-        // ==========================================
-        function onDateChange() {
-            let currentDate = document.getElementById('global-date').value;
-            console.log("日付が変更されました: " + currentDate);
-            // ここに「日付が変わったときに、その日のデータをGeoJSONから読み込み直して画面を更新する処理」を今後繋げることができます！
-            updateLabels();
         }
 
         // ==========================================
@@ -437,23 +318,21 @@
             }
 
             const selectedKey = document.getElementById('labelFieldSelect').value;
-            // 画面で選ばれている日付
-            const currentDate = document.getElementById('global-date').value;
 
             if (currentGeojsonObj && currentGeojsonObj.features) {
                 currentGeojsonObj.features.forEach(feature => {
                     try {
                         let p = feature.properties || {};
-                        
-                        // ※もし日付ごとのプロパティ（例: p["2026-05-03"] など）を持たせる場合はここで切り替えられます
                         let rawValue = selectedKey ? p[selectedKey] : null;
 
                         let labelText = "";
                         let textColor = "#ffffff";
 
+                        // 選択された項目の値があるかどうかをチェック
                         let hasValue = (rawValue !== null && rawValue !== undefined && rawValue !== "null" && String(rawValue).trim() !== "");
 
                         if (selectedKey === "東西列No") {
+                            // 「東西列No」が選ばれているときは、常に東西列Noをレモンイエローで表示
                             if (hasValue) {
                                 labelText = String(rawValue);
                                 textColor = "#ffff33";
@@ -461,10 +340,13 @@
                                 return;
                             }
                         } else {
+                            // 日付などの他の項目が選ばれている場合
                             if (hasValue) {
+                                // データがある場所：そのデータの文字（白）
                                 labelText = String(rawValue);
                                 textColor = "#ffffff";
                             } else {
+                                // データがない（Nullの）場所：東西列Noをレモンイエローで併記
                                 let fallbackVal = p["東西列No"];
                                 if (fallbackVal !== null && fallbackVal !== undefined && String(fallbackVal).trim() !== "") {
                                     labelText = String(fallbackVal);
