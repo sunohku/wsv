@@ -23,20 +23,14 @@ def get_geojson():
 @app.route('/save', methods=['POST'])
 def save_geojson():
     try:
-        req_data = request.json
-        # フロントから送られてきた filename と data を取り出す
-        filename = req_data.get('filename', '品目5_4326.geojson')
-        new_data = req_data.get('data')
-
-        # 安全のため、拡張子が .geojson のファイル以外は弾くなどの処理も可能ですが、まずはそのまま
-        file_path = os.path.join('.', filename)
+        new_data = request.json
+        file_path = '品目_4326.geojson'
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(new_data, f, ensure_ascii=False, indent=2)
             
-        return jsonify({"status": "success", "message": f"{filename} の保存に成功しました！"})
+        return jsonify({"status": "success", "message": "保存に成功しました！"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 # 作業日誌からCSVファイル名の保存要求を受け取る窓口
 @app.route('/save-log', methods=['POST'])

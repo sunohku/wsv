@@ -1,0 +1,437 @@
+
+
+<!-- 2026.09.07 10:19 指示があまくて Map.html をベースに書き換えた -->
+
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リアルタイム追跡 地理院地図 (複数選択・日付データ編集)</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        html, body, #map {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 10px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 10px;
+            border-radius: 6px;
+            box-shadow: 0 0 8px rgba(0,0,0,0.3);
+            font-size: 13px;
+        }
+
+        .control-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 6px;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .control-group input, .control-group select {
+            padding: 4px;
+            font-size: 13px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .popup-btn {
+            margin-top: 8px;
+            padding: 6px 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .popup-btn:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <div>
+            <button onclick="startTracking()">追跡開始</button>
+            <button onclick="stopTracking()">追跡終了</button>
+            <label style="margin-left: 8px;"><input type="checkbox" id="labelToggle" checked onchange="toggleLabels(this)"> ラベル表示</label>
+            <select id="labelFieldSelect" onchange="updateLabels()" style="margin-left: 4px; padding: 2px; font-size: 12px;">
+                <option value="品目">品目</option>
+                <option value="田植え" selected>田植え</option>
+                <option value="稲刈り">稲刈り</option>
+            </select>
+        </div>
+        
+        <div class="control-row">
+            <div class="control-group">
+                <span>日付</span>
+                <input type="date" id="global-date">
+            </div>
+            <div class="control-group">
+                <span>時間</span>
+                <input type="time" id="global-time">
+            </div>
+            <div class="control-group">
+                <span>作業月</span>
+                <select id="selectMonth" onchange="updateWorkList()" style="padding: 4px;">
+                    <option value="1月">1月</option>
+                    <option value="2月">2月</option>
+                    <option value="3月">3月</option>
+                    <option value="4月">4月</option>
+                    <option value="5月">5月</option>
+                    <option value="6月">6月</option>
+                    <option value="7月">7月</option>
+                    <option value="8月">8月</option>
+                    <option value="9月" selected>9月</option>
+                    <option value="10月">10月</option>
+                    <option value="11月">11月</option>
+                    <option value="12月">12月</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <span>作業名</span>
+                <select id="global-work-select" style="padding: 5px; min-width: 100px;">
+                    <!-- monthly_jobs.csv から動的に読み込まれます -->
+                </select>
+            </div>
+        </div>
+
+        <!-- 複数選択時の編集パネル（ここに動的に表示されます） -->
+        <div id="multi-edit-panel" style="margin-top: 8px; border-top: 1px solid #ddd; padding-top: 6px; display: none;">
+            <div style="font-size: 12px; font-weight: bold; margin-bottom: 4px;" id="selected-count-text">選択中：0 圃場</div>
+            <div class="control-row">
+                <div class="control-group" style="flex-grow: 1;">
+                    <span id="edit-target-label">値を変更</span>
+                    <input type="text" id="batch-value-input" placeholder="値を入力してください">
+                </div>
+                <button class="popup-btn" style="margin-top: 18px; background-color: #e74c3c;" onclick="applyBatchEdit()">反映する</button>
+            </div>
+        </div>
+
+        <input type="file" id="fileInput" accept=".geojson,.json" style="display:none;" />
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        let workMasterData = {};
+        let selectedLayerIds = new Set(); // 選択されたレイヤーIDを保持するセット
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+
+            document.getElementById('global-date').value = `${year}-${month}-${day}`;
+            document.getElementById('global-time').value = `${hours}:${minutes}`;
+
+            await loadMonthlyJobsCSV();
+            updateWorkList();
+
+            setTimeout(() => {
+                map.invalidateSize();
+            }, 100);
+        });
+
+        async function loadMonthlyJobsCSV() {
+            try {
+                const response = await fetch('monthly_jobs.csv');
+                if (!response.ok) throw new Error('monthly_jobs.csv が見つかりません。');
+                const text = await response.text();
+                const lines = text.split(/\r\n|\n/);
+                workMasterData = {};
+
+                lines.forEach(line => {
+                    if (!line.trim()) return;
+                    const cols = line.split(',');
+                    const monthKey = cols[0].trim();
+                    const jobs = cols.slice(1).map(j => j.trim()).filter(j => j !== "");
+                    if (monthKey) workMasterData[monthKey] = jobs;
+                });
+            } catch (error) {
+                console.warn("CSV読み込みエラー:", error);
+                workMasterData = {
+                    "3月": ["土づくり", "畔塗り", "荒耕し", "見回り", "その他"],
+                    "5月": ["田植え", "見回り", "その他"],
+                    "8月": ["稲刈り", "見回り", "その他"],
+                    "9月": ["稲刈り", "見回り", "その他"]
+                };
+            }
+        }
+
+        function updateWorkList() {
+            const selectedMonth = document.getElementById('selectMonth').value;
+            const workSelect = document.getElementById('global-work-select');
+            workSelect.innerHTML = "";
+            const jobs = workMasterData[selectedMonth] || ["その他"];
+            jobs.forEach(job => {
+                const option = document.createElement('option');
+                option.value = job;
+                option.innerText = job;
+                workSelect.appendChild(option);
+            });
+        }
+
+        var map = L.map('map').setView([36.747, 137.016], 14);
+
+        var gsiLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
+            attribution: "地理院タイル",
+            maxZoom: 18,
+            zIndex: 1
+        }).addTo(map);
+
+        var currentMarker = null;
+        var watchId = null;
+        var geojsonLayer = null;
+        var currentGeojsonObj = null;
+        var labelLayerGroup = L.layerGroup();
+
+        async function loadGeoJsonFromServer() {
+            try {
+                let response = await fetch('品目5_4326.geojson');
+                if (!response.ok) throw new Error("サーバーからファイルを取得できませんでした。");
+                currentGeojsonObj = await response.json();
+                renderGeoJson(currentGeojsonObj);
+            } catch (err) {
+                console.log("自動読み込み失敗:", err);
+            }
+        }
+
+        function renderGeoJson(geojson) {
+            if (geojsonLayer) {
+                map.removeLayer(geojsonLayer);
+            }
+            window.featureMap = {};
+            selectedLayerIds.clear();
+            updateMultiEditPanel();
+
+            geojsonLayer = L.geoJSON(geojson, {
+                style: function (feature) {
+                    let p = feature.properties || {};
+                    let hinmoku = p.品目 || p.hinmoku || "";
+                    let isChecked = (p.RDflg === "確認済");
+                    let baseColor = getColorByHinmoku(hinmoku);
+                    return {
+                        color: isChecked ? "#2c3e50" : baseColor,
+                        fillColor: baseColor,
+                        fillOpacity: 0.5,
+                        weight: isChecked ? 3 : 1.5
+                    };
+                },
+                onEachFeature: function (feature, layer) {
+                    let layerId = L.stamp(layer);
+                    window.featureMap[layerId] = { feature: feature, layer: layer };
+
+                    // ポリゴンクリック時の挙動：選択状態のトグル（赤枠切り替え）
+                    layer.on('click', function (e) {
+                        L.DomEvent.stopPropagation(e); // ポップアップ等へのバブリング防止
+                        if (selectedLayerIds.has(layerId)) {
+                            selectedLayerIds.delete(layerId);
+                            let isChecked = (feature.properties.RDflg === "確認済");
+                            let hinmoku = feature.properties.品目 || feature.properties.hinmoku || "";
+                            let baseColor = getColorByHinmoku(hinmoku);
+                            layer.setStyle({
+                                color: isChecked ? "#2c3e50" : baseColor,
+                                weight: isChecked ? 3 : 1.5
+                            });
+                        } else {
+                            selectedLayerIds.add(layerId);
+                            layer.setStyle({
+                                color: "#ff0000",
+                                weight: 3.5
+                            });
+                        }
+                        updateMultiEditPanel();
+                    });
+                }
+            });
+
+            geojsonLayer.addTo(map);
+            gsiLayer.bringToBack();
+
+            updateLabels();
+            const bounds = geojsonLayer.getBounds();
+            if (bounds.isValid()) {
+                map.fitBounds(bounds);
+            }
+            map.invalidateSize();
+        }
+
+        // ==========================================
+        // 【ラベル表示の更新】選択された項目に応じてテキストと色を切り替える
+        // ==========================================
+        function updateLabels() {
+            labelLayerGroup.clearLayers();
+            if (!document.getElementById('labelToggle').checked || !currentGeojsonObj) return;
+
+            const selectedField = document.getElementById('labelFieldSelect').value; // "品目", "田植え", "稲刈り" など
+
+            geojsonLayer.eachLayer(layer => {
+                let feature = layer.feature;
+                if (!feature || !feature.properties) return;
+
+                let p = feature.properties;
+                let displayVal = p[selectedField] || "";
+                let tousaiNo = p.东西列No || p.tousai || p.東西列No || "";
+
+                // データが空で、かつ「品目」以外の場合は東西列Noをレモンイエローで表示、それ以外は白文字
+                let labelText = displayVal !== "" ? displayVal : (selectedField !== "品目" ? tousaiNo : (displayVal === "1" ? "てんたかく" : "ー"));
+                let textColor = displayVal !== "" ? "#ffffff" : "#f1c40f"; // 入力済は白、未入力はレモンイエロー
+
+                let bounds = layer.getBounds();
+                if (bounds && bounds.isValid()) {
+                    let center = bounds.getCenter();
+                    let labelIcon = L.divIcon({
+                        className: 'polygon-label',
+                        html: `<div style="font-size:11px; font-weight:bold; color:${textColor}; text-shadow: 1px 1px 2px #000, -1px -1px 2px #000, 1px -1px 2px #000, -1px 1px 2px #000; white-space:nowrap; text-align:center; pointer-events:none;">${labelText}</div>`,
+                        iconSize: [60, 20],
+                        iconAnchor: [30, 10]
+                    });
+                    L.marker(center, { icon: labelIcon, interactive: false }).addTo(labelLayerGroup);
+                }
+            });
+
+            labelLayerGroup.addTo(map);
+        }
+
+        function toggleLabels(checkbox) {
+            if (checkbox.checked) {
+                labelLayerGroup.addTo(map);
+            } else {
+                map.removeLayer(labelLayerGroup);
+            }
+        }
+
+        // 複数選択パネルの表示・非表示コントロール
+        function updateMultiEditPanel() {
+            const panel = document.getElementById('multi-edit-panel');
+            const countText = document.getElementById('selected-count-text');
+            const targetLabel = document.getElementById('edit-target-label');
+            const currentField = document.getElementById('labelFieldSelect').value;
+
+            countText.innerText = `選択中： ${selectedLayerIds.size} 圃場`;
+            targetLabel.innerText = `「${currentField}」の値を変えて反映`;
+
+            if (selectedLayerIds.size > 0) {
+                panel.style.display = 'block';
+            } else {
+                panel.style.display = 'none';
+            }
+        }
+
+        // ==========================================
+        // 【一括データ反映 & サーバー保存】
+        // ==========================================
+        async function applyBatchEdit() {
+            const currentField = document.getElementById('labelFieldSelect').value;
+            const newValue = document.getElementById('batch-value-input').value;
+
+            if (selectedLayerIds.size === 0) {
+                alert("圃場が選択されていません。");
+                return;
+            }
+
+            // 選択されたすべてのレイヤーのプロパティを書き換える
+            selectedLayerIds.forEach(layerId => {
+                let item = window.featureMap[layerId];
+                if (item && item.feature && item.feature.properties) {
+                    item.feature.properties[currentField] = newValue;
+                }
+            });
+
+            // サーバーへGeoJSON全体を保存
+            if (currentGeojsonObj) {
+                try {
+                    let response = await fetch('/save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(currentGeojsonObj)
+                    });
+                    let result = await response.json();
+                    if (result.status === "success") {
+                        alert(`選択した ${selectedLayerIds.size} 圃場の「${currentField}」を「${newValue}」に更新し、保存しました！`);
+                        
+                        // 選択を解除して再描画
+                        renderGeoJson(currentGeojsonObj);
+                    } else {
+                        alert("保存に失敗しました: " + result.message);
+                    }
+                } catch (e) {
+                    alert("サーバーとの通信に失敗しました: " + e.message);
+                }
+            }
+        }
+
+        loadGeoJsonFromServer();
+
+        function startTracking() {
+            if (!navigator.geolocation) {
+                alert("この端末は位置情報取得に対応していません。");
+                return;
+            }
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            watchId = navigator.geolocation.watchPosition(
+                function (position) {
+                    var lat = position.coords.latitude;
+                    var lng = position.coords.longitude;
+                    if (!currentMarker) {
+                        currentMarker = L.marker([lat, lng]).addTo(map).bindPopup("現在地").openPopup();
+                    } else {
+                        currentMarker.setLatLng([lat, lng]);
+                    }
+                    map.setView([lat, lng], 16);
+                },
+                function (error) {
+                    alert("位置情報の取得に失敗しました: " + error.message);
+                },
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+            );
+        }
+
+        function stopTracking() {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                alert("追跡を終了しました。");
+                currentMarker = null;
+            }
+        }
+
+        function getColorByHinmoku(hinmoku) {
+            if (!hinmoku) return "#808080";
+            const colorMap = {
+                "1": "#2ecc71", "2": "#f1c40f", "4": "#e67e22", "7": "#9b59b6",
+                "14": "#e74c3c", "23": "#e84393", "83": "#1abc9c", "花き": "#3498db",
+                "放牧地": "#d35400", "その他": "#7f8c8d"
+            };
+            return colorMap[hinmoku] || "#7f8c8d";
+        }
+    </script>
+</body>
+</html>
