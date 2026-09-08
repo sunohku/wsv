@@ -7,35 +7,6 @@
     <!-- Tailwind CSS for modern responsive styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Firebase SDK (Modular CDN) -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-        // TODO: あなたのFirebaseプロジェクトの設定情報に書き換えてください
-        const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_AUTH_DOMAIN",
-            projectId: "my-map-log",
-            storageBucket: "YOUR_STORAGE_BUCKET",
-            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-            appId: "YOUR_APP_ID"
-        };
-
-        // Firebase初期化
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-
-        // グローバル関数としてwindowに登録（HTMLのonclickから呼び出すため）
-        window.db = db;
-        window.collection = collection;
-        window.addDoc = addDoc;
-        window.deleteDoc = deleteDoc;
-        window.doc = doc;
-        window.serverTimestamp = serverTimestamp;
-    </script>
-
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -135,47 +106,63 @@
         </div>
     </main>
 
-    <script>
-        // State variables
+    <!-- App Logic & Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            projectId: "my-map-log",
+            storageBucket: "YOUR_STORAGE_BUCKET",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        let db = null;
+        try {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            console.log("[Firebase] Initialized successfully.");
+        } catch (e) {
+            console.error("[Firebase Error] Initialization failed: ", e);
+        }
+
         let counts = { futsu: 0, oogata: 0, nirin: 0, hokosha: 0 };
         let historyStack = [];
 
-        // Update clock in header every second
         setInterval(() => {
             const now = new Date();
             const timeString = now.toTimeString().split(' ')[0].substring(0, 5);
             document.getElementById('current-time').textContent = timeString;
         }, 1000);
 
-        // Record event function with Firestore integration
-        async function recordEvent(categoryName, categoryKey, colorHex) {
+        // グローバルスコープに登録
+        window.recordEvent = async function(categoryName, categoryKey, colorHex) {
             const now = new Date();
             const timestamp = now.toISOString();
             const timeFormatted = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0').substring(0, 2);
 
-            // Increment count
             counts[categoryKey]++;
             document.getElementById(`count-${categoryKey}`).textContent = counts[categoryKey];
 
             let docId = null;
-
-            // Try saving to real Firestore database
-            try {
-                if (window.db) {
-                    const docRef = await window.addDoc(window.collection(window.db, "traffic_logs"), {
+            if (db) {
+                try {
+                    const docRef = await addDoc(collection(db, "traffic_logs"), {
                         categoryKey: categoryKey,
                         categoryName: categoryName,
                         timestamp: timestamp,
-                        createdAt: window.serverTimestamp()
+                        createdAt: serverTimestamp()
                     });
                     docId = docRef.id;
                     console.log(`[Firestore] Document written with ID: ${docId}`);
+                } catch (e) {
+                    console.error("[Firestore Error] Error adding document: ", e);
                 }
-            } catch (e) {
-                console.error("[Firestore Error] Error adding document: ", e);
             }
 
-            // Push to history for Undo (including Firestore docId if available)
             historyStack.push({
                 key: categoryKey,
                 name: categoryName,
@@ -184,43 +171,38 @@
                 docId: docId
             });
 
-            // Enable Undo button
             document.getElementById('undo-btn').disabled = false;
 
-            // Append to log ticker
             const ticker = document.getElementById('log-ticker');
             if (historyStack.length === 1) {
-                ticker.innerHTML = ''; // Clear placeholder
+                ticker.innerHTML = '';
             }
 
             const logItem = document.createElement('div');
-            logItem.className = "flex justify-between items-center py-1 border-b border-slate-700/50 animate-fadeIn";
+            logItem.className = "flex justify-between items-center py-1 border-b border-slate-700/50";
             logItem.innerHTML = `
                 <span class="font-bold" style="color: ${colorHex};">${categoryName}</span>
                 <span class="text-slate-400">${timeFormatted}</span>
             `;
             ticker.prepend(logItem);
-        }
+        };
 
-        // Undo last event
-        async function undoLastEvent() {
+        window.undoLastEvent = async function() {
             if (historyStack.length === 0) return;
 
             const lastEvent = historyStack.pop();
             counts[lastEvent.key]--;
             document.getElementById(`count-${lastEvent.key}`).textContent = counts[lastEvent.key];
 
-            // If there's a Firestore docId, delete it from the cloud as well
-            if (lastEvent.docId && window.db) {
+            if (lastEvent.docId && db) {
                 try {
-                    await window.deleteDoc(window.doc(window.db, "traffic_logs", lastEvent.docId));
+                    await deleteDoc(doc(db, "traffic_logs", lastEvent.docId));
                     console.log(`[Firestore] Deleted document with ID: ${lastEvent.docId}`);
                 } catch (e) {
                     console.error("[Firestore Error] Error deleting document: ", e);
                 }
             }
 
-            // Update ticker view
             const ticker = document.getElementById('log-ticker');
             if (ticker.firstChild) {
                 ticker.removeChild(ticker.firstChild);
@@ -229,10 +211,9 @@
                 ticker.innerHTML = '<div class="text-slate-500 text-center py-2">ログはまだ記録されていません</div>';
                 document.getElementById('undo-btn').disabled = true;
             }
-        }
+        };
 
-        // Reset session
-        function resetSession() {
+        window.resetSession = function() {
             if (historyStack.length > 0 && !confirm('すべてのカウントをリセットしますか？')) {
                 return;
             }
@@ -244,7 +225,7 @@
             document.getElementById('count-hokosha').textContent = '0';
             document.getElementById('log-ticker').innerHTML = '<div class="text-slate-500 text-center py-2">ログはまだ記録されていません</div>';
             document.getElementById('undo-btn').disabled = true;
-        }
+        };
     </script>
 </body>
 </html>
