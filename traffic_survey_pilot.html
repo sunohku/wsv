@@ -3,10 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>交通量調査パイロットシステム</title>
-    <!-- Tailwind CSS for modern responsive styling -->
+    <title>交通量調査パイロットシステム (座標記録対応版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Firebaseの読み込み（Compat版） -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <!-- Firebase初期化設定 -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCCMQ-1VdU-De9veqkh1UEnaWQq71dgG-U",
+            authDomain: "my-map-log-5e3bd.firebaseapp.com",
+            projectId: "my-map-log-5e3bd",
+            storageBucket: "my-map-log-5e3bd.firebasestorage.app",
+            messagingSenderId: "52246773478",
+            appId: "1:52246773478:web:dc5eb04d5e52d49422c527"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+    </script>
+
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -25,11 +43,11 @@
     <header class="bg-slate-800 border-b border-slate-700 px-4 py-3 flex justify-between items-center shadow-md">
         <div>
             <h1 class="text-base font-bold text-sky-400">交通量調査ロガー</h1>
-            <p class="text-xs text-slate-400">地点: 交差点セクション A-1</p>
+            <p id="gps-status" class="text-xs text-amber-400">GPS取得待機中...</p>
         </div>
         <div class="flex items-center space-x-2">
-            <span id="sync-status" class="inline-block w-3 h-3 rounded-full bg-emerald-500 animate-pulse" title="Firestore 接続中"></span>
-            <span id="current-time" class="text-sm font-mono font-semibold text-slate-200">15:52</span>
+            <span id="db-status" class="inline-block w-3 h-3 rounded-full bg-emerald-500 animate-pulse" title="Firestore 接続完了"></span>
+            <span id="current-time" class="text-sm font-mono font-semibold text-slate-200">--:--</span>
         </div>
     </header>
 
@@ -56,28 +74,21 @@
 
         <!-- 2x2 Giant Touch Buttons -->
         <div class="grid grid-cols-2 gap-3 flex-1 my-1">
-            <!-- 普通車 Button -->
             <button onclick="recordEvent('普通車', 'futsu', '#38bdf8')" 
                 class="btn-active bg-sky-600 hover:bg-sky-500 active:bg-sky-700 border-2 border-sky-400 rounded-2xl shadow-xl flex flex-col items-center justify-center p-4 text-white">
                 <span class="text-3xl font-bold mb-1">🚗</span>
                 <span class="text-xl font-bold tracking-wider">普通車</span>
             </button>
-
-            <!-- 大型車 Button -->
             <button onclick="recordEvent('大型車', 'oogata', '#f59e0b')" 
                 class="btn-active bg-amber-600 hover:bg-amber-500 active:bg-amber-700 border-2 border-amber-400 rounded-2xl shadow-xl flex flex-col items-center justify-center p-4 text-white">
                 <span class="text-3xl font-bold mb-1">🚚</span>
                 <span class="text-xl font-bold tracking-wider">大型車</span>
             </button>
-
-            <!-- 二輪車 Button -->
             <button onclick="recordEvent('二輪車', 'nirin', '#10b981')" 
                 class="btn-active bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 border-2 border-emerald-400 rounded-2xl shadow-xl flex flex-col items-center justify-center p-4 text-white">
                 <span class="text-3xl font-bold mb-1">🏍️</span>
                 <span class="text-xl font-bold tracking-wider">二輪車</span>
             </button>
-
-            <!-- 歩行者 Button -->
             <button onclick="recordEvent('歩行者', 'hokosha', '#f43f5e')" 
                 class="btn-active bg-rose-600 hover:bg-rose-500 active:bg-rose-700 border-2 border-rose-400 rounded-2xl shadow-xl flex flex-col items-center justify-center p-4 text-white">
                 <span class="text-3xl font-bold mb-1">🚶</span>
@@ -87,12 +98,10 @@
 
         <div class="mt-2 space-y-2">
             <div class="flex space-x-2">
-                <!-- Undo Button -->
                 <button onclick="undoLastEvent()" id="undo-btn" disabled
                     class="flex-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-600 text-slate-200 font-semibold py-3 px-4 rounded-xl shadow transition text-sm flex items-center justify-center space-x-1">
                     <span>↩️ 直前を取り消す</span>
                 </button>
-                <!-- Clear / Reset -->
                 <button onclick="resetSession()" 
                     class="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-rose-400 font-semibold py-3 px-4 rounded-xl shadow transition text-sm">
                     リセット
@@ -106,75 +115,64 @@
         </div>
     </main>
 
-    <!-- App Logic & Firebase SDK -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_AUTH_DOMAIN",
-            projectId: "my-map-log",
-            storageBucket: "YOUR_STORAGE_BUCKET",
-            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-            appId: "YOUR_APP_ID"
-        };
-
-        let db = null;
-        try {
-            const app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            console.log("[Firebase] Initialized successfully.");
-        } catch (e) {
-            console.error("[Firebase Error] Initialization failed: ", e);
-        }
-
+    <!-- アプリケーションロジック -->
+    <script>
         let counts = { futsu: 0, oogata: 0, nirin: 0, hokosha: 0 };
         let historyStack = [];
+        let currentLatLng = { lat: null, lng: null };
+        let watchId = null;
 
+        // ページ読み込み時にGPS監視を開始
+        window.addEventListener('DOMContentLoaded', () => {
+            if (navigator.geolocation) {
+                watchId = navigator.geolocation.watchPosition(
+                    (position) => {
+                        currentLatLng.lat = position.coords.latitude;
+                        currentLatLng.lng = position.coords.longitude;
+                        document.getElementById('gps-status').textContent = `GPS取得中 (緯度経度あり)`;
+                        document.getElementById('gps-status').className = "text-xs text-emerald-400";
+                    },
+                    (error) => {
+                        console.warn("GPS取得エラー:", error);
+                        document.getElementById('gps-status').textContent = `GPS取得失敗 (位置情報なしで記録)`;
+                        document.getElementById('gps-status').className = "text-xs text-rose-400";
+                    },
+                    { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+                );
+            } else {
+                document.getElementById('gps-status').textContent = `非対応端末`;
+            }
+        });
+
+        // 時計の更新
         setInterval(() => {
             const now = new Date();
-            const timeString = now.toTimeString().split(' ')[0].substring(0, 5);
-            document.getElementById('current-time').textContent = timeString;
+            document.getElementById('current-time').textContent = now.toTimeString().split(' ')[0].substring(0, 5);
         }, 1000);
 
-        // グローバルスコープに登録
-        window.recordEvent = async function(categoryName, categoryKey, colorHex) {
+        // イベント記録とFirestore保存（座標値を含む）
+        async function recordEvent(categoryName, categoryKey, colorHex) {
             const now = new Date();
-            const timestamp = now.toISOString();
-            const timeFormatted = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0').substring(0, 2);
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            const millis = String(now.getMilliseconds()).padStart(3, '0');
 
+            let cleanDate = `${year}${month}${day}`;
+            let cleanTime = `${hours}${minutes}${seconds}`;
+            let customDocId = `${cleanDate}_${cleanTime}_${millis}`;
+            let timeFormatted = `${hours}:${minutes}:${seconds}.${millis.substring(0, 2)}`;
+
+            // 1. カウント加算
             counts[categoryKey]++;
             document.getElementById(`count-${categoryKey}`).textContent = counts[categoryKey];
 
-            let docId = null;
-            if (db) {
-                try {
-                    const docRef = await addDoc(collection(db, "traffic_logs"), {
-                        categoryKey: categoryKey,
-                        categoryName: categoryName,
-                        timestamp: timestamp,
-                        createdAt: serverTimestamp()
-                    });
-                    docId = docRef.id;
-                    console.log(`[Firestore] Document written with ID: ${docId}`);
-                } catch (e) {
-                    console.error("[Firestore Error] Error adding document: ", e);
-                }
-            }
-
-            historyStack.push({
-                key: categoryKey,
-                name: categoryName,
-                time: timeFormatted,
-                timestamp: timestamp,
-                docId: docId
-            });
-
-            document.getElementById('undo-btn').disabled = false;
-
+            // 2. 画面下のログ一覧（Ticker）へ即時反映
             const ticker = document.getElementById('log-ticker');
-            if (historyStack.length === 1) {
+            if (historyStack.length === 0) {
                 ticker.innerHTML = '';
             }
 
@@ -185,9 +183,30 @@
                 <span class="text-slate-400">${timeFormatted}</span>
             `;
             ticker.prepend(logItem);
-        };
 
-        window.undoLastEvent = async function() {
+            // 3. 履歴スタックに追加
+            historyStack.push({ key: categoryKey, name: categoryName, time: timeFormatted, docId: customDocId });
+            document.getElementById('undo-btn').disabled = false;
+
+            // 4. Firestore へ緯度・経度を含めて保存
+            try {
+                await db.collection("traffic_logs").doc(customDocId).set({
+                    categoryKey: categoryKey,
+                    categoryName: categoryName,
+                    latitude: currentLatLng.lat !== null ? currentLatLng.lat : "",
+                    longitude: currentLatLng.lng !== null ? currentLatLng.lng : "",
+                    date: `${year}-${month}-${day}`,
+                    time: `${hours}:${minutes}:${seconds}`,
+                    timestamp: now.toISOString(),
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                console.log(`[Firebase保存成功] ID: ${customDocId}, 緯度: ${currentLatLng.lat}, 経度: ${currentLatLng.lng}`);
+            } catch (err) {
+                console.error("[Firebase保存エラー]", err);
+            }
+        }
+
+        async function undoLastEvent() {
             if (historyStack.length === 0) return;
 
             const lastEvent = historyStack.pop();
@@ -196,10 +215,10 @@
 
             if (lastEvent.docId && db) {
                 try {
-                    await deleteDoc(doc(db, "traffic_logs", lastEvent.docId));
-                    console.log(`[Firestore] Deleted document with ID: ${lastEvent.docId}`);
-                } catch (e) {
-                    console.error("[Firestore Error] Error deleting document: ", e);
+                    await db.collection("traffic_logs").doc(lastEvent.docId).delete();
+                    console.log("[Firebase削除成功] ID: ", lastEvent.docId);
+                } catch (err) {
+                    console.error("[Firebase削除エラー]", err);
                 }
             }
 
@@ -211,21 +230,18 @@
                 ticker.innerHTML = '<div class="text-slate-500 text-center py-2">ログはまだ記録されていません</div>';
                 document.getElementById('undo-btn').disabled = true;
             }
-        };
+        }
 
-        window.resetSession = function() {
-            if (historyStack.length > 0 && !confirm('すべてのカウントをリセットしますか？')) {
-                return;
-            }
+        function resetSession() {
+            if (historyStack.length > 0 && !confirm('すべてのカウントをリセットしますか？')) return;
             counts = { futsu: 0, oogata: 0, nirin: 0, hokosha: 0 };
             historyStack = [];
-            document.getElementById('count-futsu').textContent = '0';
-            document.getElementById('count-oogata').textContent = '0';
-            document.getElementById('count-nirin').textContent = '0';
-            document.getElementById('count-hokosha').textContent = '0';
+            ['futsu', 'oogata', 'nirin', 'hokosha'].forEach(k => {
+                document.getElementById(`count-${k}`).textContent = '0';
+            });
             document.getElementById('log-ticker').innerHTML = '<div class="text-slate-500 text-center py-2">ログはまだ記録されていません</div>';
             document.getElementById('undo-btn').disabled = true;
-        };
+        }
     </script>
 </body>
 </html>
