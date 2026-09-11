@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>圃場マップ（Supabase完全連携版）</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Supabase JS Client CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        html, body { height: 100%; width: 100%; margin: 0; padding: 0; overflow: hidden; -webkit-text-size-adjust: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        #map { height: 100%; width: 100%; position: absolute; top: 0; left: 0; }
+        .arrow-marker { background: transparent; border: none; }
+        .arrow-icon-inner {
+            width: 0; height: 0;
+            border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 24px solid #1976d2;
+            transform-origin: 50% 70%; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
+        }
+        #controls {
+            position: absolute; bottom: 20px; left: 10px; z-index: 1000;
+            background: rgba(255, 255, 255, 0.95); padding: 12px; border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2); font-size: 13px;
+        }
+        .control-row { display: flex; gap: 8px; margin-top: 8px; align-items: flex-end; }
+        .control-group { display: flex; flex-direction: column; font-size: 12px; font-weight: bold; }
+        .control-group input, .control-group select { padding: 4px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; }
+        .current-location-btn { background-color: #2e7d32; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; height: 33px; font-size: 13px; }
+        .current-location-btn:hover { background-color: #1b5e20; }
+        .office-btn { background-color: #1976d2; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; height: 33px; font-size: 13px; }
+        .office-btn:hover { background-color: #115293; }
+
+        .popup-content { font-size: 13px; line-height: 1.4; min-width: 230px; }
+        .popup-item { margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; display: flex; align-items: center; justify-content: space-between; }
+        .popup-section { margin-top: 6px; padding-top: 6px; border-top: 1px solid #eee; }
+        
+        .drum-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 4px;
+        }
+        .drum-column {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #f8f9fa;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            width: 50px;
+            overflow: hidden;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .drum-btn {
+            background: #ffffff;
+            border: none;
+            width: 100%;
+            height: 26px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #495057;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        .drum-btn:hover {
+            background: #e9ecef;
+            color: #007bff;
+        }
+        .drum-display {
+            width: 100%;
+            height: 30px;
+            background: #ffffff;
+            border-top: 1px solid #dee2e6;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .drum-label {
+            font-size: 10px;
+            color: #666;
+            margin-top: 2px;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="controls">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <div>
+                <label style="margin-left: 0;"><input type="checkbox" id="labelToggle" checked onchange="window.toggleLabels(this)"> ラベル表示</label>
+                <select id="labelFieldSelect" onchange="window.updateLabels()" style="margin-left: 4px; padding: 2px; font-size: 12px;">
+                    <option value="">(項目を選択)</option>
+                </select>
+            </div>
+            <div>
+                <button class="office-btn" onclick="window.moveToOffice()">事務所</button>
+            </div>
+        </div>
+
+        <div class="control-row">
+            <div class="control-group">
+                <span>日付</span>
+                <input type="date" id="global-date">
+            </div>
+            <div class="control-group">
+                <span>時間</span>
+                <input type="time" id="global-time">
+            </div>
+            <div class="control-group" style="justify-content: flex-end;">
+                <button class="current-location-btn" onclick="window.moveToCurrentLocation()">現在地</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // Supabase接続設定 (必要に応じてプロジェクトのURLとAnon Keyに書き換えてください)
+        const SUPABASE_URL = 'wkrwvqgicurgmcsitsum.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_enXIXvGovfpaS6QoceRYyA_6VDBUPag';
+        
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        var map = L.map('map', {
+            zoomControl: true,
+            tap: false
+        }).setView([36.747, 137.016], 14);
+
+        var gsiLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
+            attribution: "地理院タイル",
+            maxZoom: 18,
+            zIndex: 1
+        }).addTo(map);
+
+        var currentMarker = null;
+        var officeMarker = null;
+        var geojsonLayer = null;
+        var currentGeojsonObj = null;
+        var labelLayerGroup = L.layerGroup();
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+
+            document.getElementById('global-date').value = `${year}-${month}-${day}`;
+            document.getElementById('global-time').value = `${hours}:${minutes}`;
+
+            await loadGeoJsonFromSupabase();
+            setTimeout(() => { map.invalidateSize(); }, 100);
+        });
+
+        async function loadGeoJsonFromSupabase() {
+            try {
+                const { data, error } = await supabaseClient.from('farms').select('*');
+                if (error) throw error;
+
+                const features = [];
+                if (data) {
+                    data.forEach((row) => {
+                        let geometry = {};
+                        if (row.geometry_json) {
+                            try { geometry = JSON.parse(row.geometry_json); } catch (err) { console.error("JSONパースエラー:", err); }
+                        }
+                        features.push({
+                            id: row.id,
+                            type: "Feature",
+                            properties: row.properties || {},
+                            geometry: geometry
+                        });
+                    });
+                }
+
+                currentGeojsonObj = { type: "FeatureCollection", features: features };
+                populateLabelFields(currentGeojsonObj);
+                renderGeoJson(currentGeojsonObj);
+            } catch (err) {
+                console.error("Supabase読み込み失敗:", err);
+            }
+        }
+
+        function populateLabelFields(geojson) {
+            const select = document.getElementById('labelFieldSelect');
+            select.innerHTML = "";
+            let keysSet = new Set();
+            if (geojson && geojson.features) {
+                geojson.features.forEach(f => {
+                    if (f.properties) { Object.keys(f.properties).forEach(k => keysSet.add(k)); }
+                });
+            }
+            keysSet.forEach(key => {
+                let opt = document.createElement('option');
+                opt.value = key;
+                opt.innerText = key;
+                select.appendChild(opt);
+            });
+            if (keysSet.has("東西列No")) { select.value = "東西列No"; }
+            else if (keysSet.has("名前")) { select.value = "名前"; }
+        }
+
+        window.updatePopupField = async function(docId, fieldName, value) {
+            if (!docId) return;
+            try {
+                if (currentGeojsonObj && currentGeojsonObj.features) {
+                    let target = currentGeojsonObj.features.find(f => f.id == docId);
+                    if (target) {
+                        if (!target.properties) target.properties = {};
+                        target.properties[fieldName] = value;
+                        
+                        // Supabaseのレコード更新
+                        const { error } = await supabaseClient
+                            .from('farms')
+                            .update({ properties: target.properties })
+                            .eq('id', docId);
+
+                        if (error) throw error;
+                    }
+                }
+            } catch (err) {
+                console.error(`${fieldName}更新失敗:`, err);
+            }
+        };
+
+        window.updatePopupWidth = async function(docId, newVal) {
+            if (newVal < 0) newVal = 0;
+            if (newVal > 99) newVal = 99;
+            
+            await window.updatePopupField(docId, "幅員", newVal);
+
+            const tens = Math.floor(newVal / 10);
+            const ones = newVal % 10;
+            const tensElem = document.getElementById(`tens-display-${docId}`);
+            const onesElem = document.getElementById(`ones-display-${docId}`);
+            if (tensElem) tensElem.innerText = tens;
+            if (onesElem) onesElem.innerText = ones;
+        };
+
+        window.adjustPopupWidthDigit = function(docId, digitPlace, delta) {
+            if (!currentGeojsonObj || !currentGeojsonObj.features) return;
+            let target = currentGeojsonObj.features.find(f => f.id == docId);
+            if (target) {
+                if (!target.properties) target.properties = {};
+                let currentVal = parseInt(target.properties["幅員"], 10);
+                if (isNaN(currentVal)) currentVal = 0;
+
+                let tens = Math.floor(currentVal / 10);
+                let ones = currentVal % 10;
+
+                if (digitPlace === 'tens') {
+                    tens = (tens + delta + 10) % 10;
+                } else {
+                    ones = (ones + delta + 10) % 10;
+                }
+
+                let newVal = tens * 10 + ones;
+                window.updatePopupWidth(docId, newVal);
+            }
+        };
+
+        function renderGeoJson(geojson) {
+            if (geojsonLayer) map.removeLayer(geojsonLayer);
+
+            geojsonLayer = L.geoJSON(geojson, {
+                style: function (feature) {
+                    let p = feature.properties || {};
+                    let hinmoku = p.品目 || p.hinmoku || "";
+                    let baseColor = getColorByHinmoku(hinmoku);
+                    return { color: baseColor, fillColor: baseColor, fillOpacity: 0.6, weight: 1.5 };
+                },
+                onEachFeature: function (feature, layer) {
+                    let p = feature.properties || {};
+                    let targetKeys = ["東西列No", "名前", "品目", "面積", "田植え", "稲刈り", "OBJECTID"];
+                    let docId = feature.id || "";
+                    
+                    let html = `<div class="popup-content">`;
+                    targetKeys.forEach(key => {
+                        let val = p[key];
+                        if (val === undefined || val === null || String(val).trim() === "") {
+                            val = (key === "OBJECTID") ? "-" : "<span style='color: #aaa;'>未入力</span>";
+                        }
+                        html += `<div><strong>${key}</strong>：${val}</div>`;
+                    });
+
+                    // 1. 融雪
+                    let currentYusetsu = p["融雪"] || "";
+                    html += `<div class="popup-item">
+                        <strong>融雪:</strong>
+                        <div>
+                            <label style="cursor:pointer; margin-right:8px;"><input type="radio" name="yusetsu_${docId}" value="有" ${currentYusetsu === '有' ? 'checked' : ''} onchange="window.updatePopupField('${docId}', '融雪', '有')"> 有</label>
+                            <label style="cursor:pointer;"><input type="radio" name="yusetsu_${docId}" value="無" ${currentYusetsu === '無' ? 'checked' : ''} onchange="window.updatePopupField('${docId}', '融雪', '無')"> 無</label>
+                        </div>
+                    </div>`;
+
+                    // 2. 下水
+                    let currentGesui = p["下水"] || "";
+                    html += `<div class="popup-item">
+                        <strong>下水:</strong>
+                        <div>
+                            <label style="cursor:pointer; margin-right:8px;"><input type="radio" name="gesui_${docId}" value="有" ${currentGesui === '有' ? 'checked' : ''} onchange="window.updatePopupField('${docId}', '下水', '有')"> 有</label>
+                            <label style="cursor:pointer;"><input type="radio" name="gesui_${docId}" value="無" ${currentGesui === '無' ? 'checked' : ''} onchange="window.updatePopupField('${docId}', '下水', '無')"> 無</label>
+                        </div>
+                    </div>`;
+
+                    // 3. 舗装
+                    let currentHosou = p["舗装"] || "";
+                    html += `<div class="popup-item">
+                        <strong>舗装:</strong>
+                        <div>
+                            <label style="cursor:pointer; margin-right:8px;"><input type="radio" name="hosou_${docId}" value="有" ${currentHosou === '有' ? 'checked' : ''} onchange="window.updatePopupField('${docId}', '舗装', '有')"> 有</label>
+                            <label style="cursor:pointer;"><input type="radio" name="hosou_${docId}" value="無" ${currentHosou === '無' ? 'checked' : ''} onchange="window.updatePopupField('${docId}', '舗装', '無')"> 無</label>
+                        </div>
+                    </div>`;
+
+                    // 4. 歩道
+                    let currentSidewalk = p["歩道"] || "";
+                    html += `<div class="popup-item">
+                        <strong>歩道:</strong>
+                        <div>
+                            <label style="cursor:pointer; margin-right:6px;"><input type="radio" name="sidewalk_${docId}" value="片" ${currentSidewalk === '片' ? 'checked' : ''} onchange="window.updatePopupField('${docId}', '歩道', '片')"> 片</label>
+                            <label style="cursor:pointer; margin-right:6px;"><input type="radio" name="sidewalk_${docId}" value="両" ${currentSidewalk === '両' ? 'checked' : ''} onchange="window.updatePopupField('${docId}', '歩道', '両')"> 両</label>
+                            <label style="cursor:pointer;"><input type="radio" name="sidewalk_${docId}" value="無" ${currentSidewalk === '無' ? 'checked' : ''} onchange="window.updatePopupField('${docId}', '歩道', '無')"> 無</label>
+                        </div>
+                    </div>`;
+
+                    // 5. 幅員 (ドラムロール)
+                    let currentWidth = parseInt(p["幅員"], 10);
+                    if (isNaN(currentWidth)) currentWidth = 0;
+                    let tensVal = Math.floor(currentWidth / 10);
+                    let onesVal = currentWidth % 10;
+
+                    html += `<div class="popup-section">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;">
+                            <strong>幅員 (m):</strong>
+                            <span style="font-size:11px; color:#666;">(0〜99)</span>
+                        </div>
+                        <div class="drum-container">
+                            <div>
+                                <div class="drum-column">
+                                    <button class="drum-btn" onclick="window.adjustPopupWidthDigit('${docId}', 'tens', 1)">▲</button>
+                                    <div class="drum-display" id="tens-display-${docId}">${tensVal}</div>
+                                    <button class="drum-btn" onclick="window.adjustPopupWidthDigit('${docId}', 'tens', -1)">▼</button>
+                                </div>
+                                <div class="drum-label">10の位</div>
+                            </div>
+                            <div>
+                                <div class="drum-column">
+                                    <button class="drum-btn" onclick="window.adjustPopupWidthDigit('${docId}', 'ones', 1)">▲</button>
+                                    <div class="drum-display" id="ones-display-${docId}">${onesVal}</div>
+                                    <button class="drum-btn" onclick="window.adjustPopupWidthDigit('${docId}', 'ones', -1)">▼</button>
+                                </div>
+                                <div class="drum-label">1の位</div>
+                            </div>
+                        </div>
+                    </div>`;
+
+                    html += `</div>`;
+
+                    layer.bindPopup(html);
+                }
+            });
+
+            geojsonLayer.addTo(map);
+            gsiLayer.bringToBack();
+            window.updateLabels();
+
+            const bounds = geojsonLayer.getBounds();
+            if (bounds.isValid()) { map.fitBounds(bounds); }
+            map.invalidateSize();
+        }
+
+        function getColorByHinmoku(hinmoku) {
+            if (!hinmoku) return "#e0e0e0";
+            let val = String(hinmoku).trim();
+            const colorMap = {
+                "てんたかく": "#64b5f6", "1": "#64b5f6",
+                "コシヒカリ": "#8bc34a", "2": "#8bc34a",
+                "富富富": "#e040fb", "4": "#e040fb",
+                "14": "#78909c",
+            };
+            return colorMap[val] || "#b0bec5";
+        }
+
+        window.updateLabels = function() {
+            labelLayerGroup.clearLayers();
+            if (!document.getElementById('labelToggle').checked || !currentGeojsonObj) {
+                map.removeLayer(labelLayerGroup);
+                return;
+            }
+
+            const selectedKey = document.getElementById('labelFieldSelect').value;
+            if (currentGeojsonObj && currentGeojsonObj.features) {
+                currentGeojsonObj.features.forEach(feature => {
+                    try {
+                        let p = feature.properties || {};
+                        let rawValue = selectedKey ? p[selectedKey] : null;
+                        let labelText = "";
+                        let textColor = "#ffffff";
+                        let hasValue = (rawValue !== null && rawValue !== undefined && String(rawValue).trim() !== "");
+
+                        if (selectedKey === "東西列No") {
+                            if (hasValue) { labelText = String(rawValue); textColor = "#ffff33"; }
+                            else { return; }
+                        } else {
+                            if (hasValue) { labelText = String(rawValue); }
+                            else {
+                                let fallbackVal = p["東西列No"];
+                                if (fallbackVal) { labelText = String(fallbackVal); textColor = "#ffff33"; }
+                                else { return; }
+                            }
+                        }
+
+                        let tempLayer = L.geoJSON(feature);
+                        let bounds = tempLayer.getBounds();
+                        if (bounds && bounds.isValid()) {
+                            let center = bounds.getCenter();
+                            let labelIcon = L.divIcon({
+                                className: 'polygon-label',
+                                html: `<div style="font-size:11px; font-weight:bold; color:${textColor}; text-shadow: 1px 1px 2px #000, -1px -1px 2px #000, 1px -1px 2px #000, -1px 1px 2px #000; white-space:nowrap; text-align:center; pointer-events:none;">${labelText}</div>`,
+                                iconSize: [60, 20],
+                                iconAnchor: [30, 10]
+                            });
+                            L.marker(center, { icon: labelIcon, interactive: false }).addTo(labelLayerGroup);
+                        }
+                    } catch (e) { console.error(e); }
+                });
+            }
+            labelLayerGroup.addTo(map);
+        };
+
+        window.toggleLabels = function() {
+            window.updateLabels();
+        };
+
+        window.moveToOffice = function() {
+            var officeLat = 36.676550;
+            var officeLng = 137.019850;
+            if (!officeMarker) {
+                officeMarker = L.marker([officeLat, officeLng]).addTo(map).bindPopup("ファーム貞杉").openPopup();
+            } else {
+                officeMarker.setLatLng([officeLat, officeLng]);
+            }
+            map.setView([officeLat, officeLng], 19);
+        };
+
+        window.moveToCurrentLocation = function() {
+            if (!navigator.geolocation) { alert("このブラウザは位置情報取得に対応していません。"); return; }
+            navigator.geolocation.getCurrentPosition(
+                function (position) {
+                    var lat = position.coords.latitude;
+                    var lng = position.coords.longitude;
+                    var heading = position.coords.heading;
+                    var rotationStyle = (heading !== null && !isNaN(heading)) ? `transform: rotate(${heading}deg);` : '';
+                    var arrowIcon = L.divIcon({
+                        className: 'arrow-marker',
+                        html: `<div class="arrow-icon-inner" style="${rotationStyle}"></div>`,
+                        iconSize: [30, 30],
+                        iconAnchor: [15, 15]
+                    });
+                    if (!currentMarker) {
+                        currentMarker = L.marker([lat, lng], { icon: arrowIcon }).addTo(map).bindPopup("現在地").openPopup();
+                    } else {
+                        currentMarker.setIcon(arrowIcon);
+                        currentMarker.setLatLng([lat, lng]);
+                    }
+                    map.setView([lat, lng], 17);
+                },
+                function (error) { alert("現在地の取得に失敗しました: " + error.message); },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        };
+    </script>
+</body>
+</html>
