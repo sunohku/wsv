@@ -1,0 +1,24 @@
+Html<div id="map" style="height: 500px;"></div>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+<script>
+async function loadMap() {
+  // Edge FunctionからGeoJSON取得
+  const res = await fetch('https://wkrwvqqicurgmcsitsum.supabase.co/functions/v1/get-farms')
+  const geojson = await res.json()
+
+  // 地図作成
+  const map = L.map('map').setView([35.68, 139.76], 10)
+
+  // タイルレイヤー
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map)
+
+  // GeoJSON描画
+  L.geoJSON(geojson).addTo(map)
+}
+
+loadMap()
+</script>

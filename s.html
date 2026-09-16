@@ -1,0 +1,33 @@
+// supabase/functions/get-farms/index.ts
+import { serve } from 'https://deno.land/std/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js'
+
+serve(async (req) => {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  )
+
+  // farmsテーブルから id, geometry_json, properties を取得
+  const { data, error } = await supabase
+    .from('farms')
+    .select('id, geometry_json, properties')
+
+  if (error) {
+    return new Response(JSON.stringify({ error: error.message }), { status: 500 })
+  }
+
+  // 取得したデータをGeoJSONのFeatureCollection形式に組み立て
+  const geojson = {
+    type: 'FeatureCollection',
+    features: data.map(row => ({
+      type: 'Feature',
+      geometry: row.geometry_json ? JSON.parse(row.geometry_json) : null,
+      properties: row.properties || { id: row.id }
+    }))
+  }
+
+  return new Response(JSON.stringify(geojson), {
+    headers: { 'Content-Type': 'application/json' }
+  })
+})
