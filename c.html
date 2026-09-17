@@ -1,55 +1,299 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 
 <head>
-    <meta charset="utf-8">
-    <title>圃場マップ</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>圃場マップ（Supabase連携版）</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
     <style>
-        html,
-        body,
-        #map {
-            width: 100%;
-            height: 100vh;
-            margin: 0;
-            padding: 0;
+        html, body { height: 100%; width: 100%; margin: 0; padding: 0; overflow: hidden; -webkit-text-size-adjust: 100%; }
+        #map { height: 100%; width: 100%; position: absolute; top: 0; left: 0; }
+        .arrow-marker { background: transparent; border: none; }
+        .arrow-icon-inner {
+            width: 0; height: 0;
+            border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 24px solid #1976d2;
+            transform-origin: 50% 70%; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
         }
+        #controls {
+            position: absolute; bottom: 20px; left: 10px; z-index: 1000;
+            background: rgba(255, 255, 255, 0.95); padding: 10px; border-radius: 6px;
+            box-shadow: 0 0 8px rgba(0, 0, 0, 0.3); font-size: 13px;
+        }
+        .control-row { display: flex; gap: 8px; margin-top: 6px; align-items: flex-end; }
+        .control-group { display: flex; flex-direction: column; font-size: 12px; font-weight: bold; }
+        .control-group input, .control-group select { padding: 4px; font-size: 13px; border: 1px solid #ccc; border-radius: 4px; }
+        .current-location-btn { background-color: #2e7d32; color: white; border: none; padding: 5px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; height: 31px; font-size: 13px; }
+        .current-location-btn:hover { background-color: #1b5e20; }
+        .office-btn { background-color: #1976d2; color: white; border: none; padding: 5px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; height: 31px; font-size: 13px; }
+        .office-btn:hover { background-color: #115293; }
     </style>
 </head>
 
 <body>
+    <div id="controls">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <div>
+                <label style="margin-left: 0;"><input type="checkbox" id="labelToggle" checked onchange="window.toggleLabels()"> ラベル表示</label>
+                <select id="labelFieldSelect" onchange="window.updateLabels()" style="margin-left: 4px; padding: 2px; font-size: 12px;">
+                    <option value="">(項目を選択)</option>
+                </select>
+            </div>
+            <div>
+                <button class="office-btn" onclick="window.moveToOffice()">事務所</button>
+            </div>
+        </div>
+
+        <div class="control-row">
+            <div class="control-group">
+                <span>日付</span>
+                <input type="date" id="global-date">
+            </div>
+            <div class="control-group">
+                <span>時間</span>
+                <input type="time" id="global-time">
+            </div>
+            <div class="control-group" style="justify-content: flex-end;">
+                <button class="current-location-btn" onclick="window.moveToCurrentLocation()">現在地</button>
+            </div>
+        </div>
+    </div>
+
     <div id="map"></div>
 
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
     <script>
-        async function loadMap() {
+        // 地図の初期化
+        var map = L.map('map', {
+            zoomControl: true,
+            tap: false
+        }).setView([36.747, 137.016], 14);
+
+        // 国土地理院の航空写真タイル
+        var gsiLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
+            attribution: "地理院タイル",
+            maxZoom: 18,
+            zIndex: 1
+        }).addTo(map);
+
+        var currentMarker = null;
+        var officeMarker = null;
+        var geojsonLayer = null;
+        var currentGeojsonObj = null;
+        var labelLayerGroup = L.layerGroup();
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+
+            document.getElementById('global-date').value = `${year}-${month}-${day}`;
+            document.getElementById('global-time').value = `${hours}:${minutes}`;
+
+            await loadGeoJsonFromSupabase();
+            
+            setTimeout(() => { map.invalidateSize(); }, 100);
+        });
+
+        // ==========================================
+        // 【Supabase Edge Functions からGeoJSON読み込み】
+        // ==========================================
+        async function loadGeoJsonFromSupabase() {
             try {
-                // 地図作成
-                const map = L.map('map').setView([36.74, 137.03], 10);
+                const res = await fetch('https://wkrwvqqicurgmcsitsum.supabase.co/functions/v1/get-farms');
+                if (!res.ok) throw new Error('ネットワーク応答が異常です');
+                
+                currentGeojsonObj = await res.json();
+                console.log("Supabaseからデータを取得しました。", currentGeojsonObj);
 
-                // タイルレイヤー
-                // タイルレイヤー（別の安定した無料タイルサーバーに変更）
-                // タイルレイヤー（キー不要の標準OSM）
-                // タイルレイヤー（CARTOのキー不要・無料プラン向けURL）
-                // タイルレイヤー（国土地理院 地図・キー不要）
-                L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
-                    maxZoom: 18,
-                    attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院</a>'
-                }).addTo(map);
-
-                // Edge FunctionからGeoJSON取得
-                const res = await fetch('https://wkrwvgqicurgmcsitsum.supabase.co/functions/v1/get-farms');
-
-                const geojson = await res.json();
-
-                // GeoJSON描画
-                L.geoJSON(geojson).addTo(map);
-            } catch (e) {
-                console.error('読み込みエラー:', e);
+                populateLabelFields(currentGeojsonObj);
+                renderGeoJson(currentGeojsonObj);
+            } catch (err) {
+                console.error("データ読み込み失敗:", err);
+                alert("データの読み込みに失敗しました。コンソールを確認してください。");
             }
         }
 
-        loadMap();
+        function populateLabelFields(geojson) {
+            const select = document.getElementById('labelFieldSelect');
+            select.innerHTML = "";
+
+            let keysSet = new Set();
+            if (geojson && geojson.features) {
+                geojson.features.forEach(f => {
+                    if (f.properties) {
+                        Object.keys(f.properties).forEach(k => keysSet.add(k));
+                    }
+                });
+            }
+
+            keysSet.forEach(key => {
+                let opt = document.createElement('option');
+                opt.value = key;
+                opt.innerText = key;
+                select.appendChild(opt);
+            });
+
+            if (keysSet.has("東西列No")) {
+                select.value = "東西列No";
+            } else if (keysSet.has("名前")) {
+                select.value = "名前";
+            }
+        }
+
+        function renderGeoJson(geojson) {
+            if (geojsonLayer) map.removeLayer(geojsonLayer);
+
+            geojsonLayer = L.geoJSON(geojson, {
+                style: function (feature) {
+                    let p = feature.properties || {};
+                    let hinmoku = p.品目 || p.hinmoku || "";
+                    let baseColor = getColorByHinmoku(hinmoku);
+                    return {
+                        color: baseColor,
+                        fillColor: baseColor,
+                        fillOpacity: 0.6,
+                        weight: 1.5
+                    };
+                },
+                onEachFeature: function (feature, layer) {
+                    let p = feature.properties || {};
+                    let targetKeys = ["東西列No", "名前", "品目", "面積", "田植え", "稲刈り", "OBJECTID"];
+                    
+                    let html = `<div style="font-size: 13px; line-height: 1.6; min-width: 160px;">`;
+                    targetKeys.forEach(key => {
+                        let val = p[key];
+                        if (val === undefined || val === null || String(val).trim() === "") {
+                            val = (key === "OBJECTID") ? "-" : "<span style='color: #aaa;'>未入力</span>";
+                        }
+                        html += `<div><strong>${key}</strong>：${val}</div>`;
+                    });
+                    html += `</div>`;
+
+                    layer.bindPopup(html);
+                }
+            });
+
+            geojsonLayer.addTo(map);
+            gsiLayer.bringToBack();
+            window.updateLabels();
+
+            const bounds = geojsonLayer.getBounds();
+            if (bounds.isValid()) {
+                map.fitBounds(bounds);
+            }
+            map.invalidateSize();
+        }
+
+        function getColorByHinmoku(hinmoku) {
+            if (!hinmoku) return "#e0e0e0";
+            let val = String(hinmoku).trim();
+            const colorMap = {
+                "てんたかく": "#64b5f6", "1": "#64b5f6",
+                "コシヒカリ": "#8bc34a", "2": "#8bc34a",
+                "富富富": "#e040fb", "4": "#e040fb",
+                "14": "#78909c",
+            };
+            if (colorMap[val]) return colorMap[val];
+            return "#b0bec5";
+        }
+
+        window.updateLabels = function() {
+            labelLayerGroup.clearLayers();
+            if (!document.getElementById('labelToggle').checked || !currentGeojsonObj) {
+                map.removeLayer(labelLayerGroup);
+                return;
+            }
+
+            const selectedKey = document.getElementById('labelFieldSelect').value;
+            if (currentGeojsonObj && currentGeojsonObj.features) {
+                currentGeojsonObj.features.forEach(feature => {
+                    try {
+                        let p = feature.properties || {};
+                        let rawValue = selectedKey ? p[selectedKey] : null;
+                        let labelText = "";
+                        let textColor = "#ffffff";
+                        let hasValue = (rawValue !== null && rawValue !== undefined && String(rawValue).trim() !== "");
+
+                        if (selectedKey === "東西列No") {
+                            if (hasValue) { labelText = String(rawValue); textColor = "#ffff33"; }
+                            else { return; }
+                        } else {
+                            if (hasValue) { labelText = String(rawValue); }
+                            else {
+                                let fallbackVal = p["東西列No"];
+                                if (fallbackVal) { labelText = String(fallbackVal); textColor = "#ffff33"; }
+                                else { return; }
+                            }
+                        }
+
+                        let tempLayer = L.geoJSON(feature);
+                        let bounds = tempLayer.getBounds();
+                        if (bounds && bounds.isValid()) {
+                            let center = bounds.getCenter();
+                            let labelIcon = L.divIcon({
+                                className: 'polygon-label',
+                                html: `<div style="font-size:11px; font-weight:bold; color:${textColor}; text-shadow: 1px 1px 2px #000, -1px -1px 2px #000, 1px -1px 2px #000, -1px 1px 2px #000; white-space:nowrap; text-align:center; pointer-events:none;">${labelText}</div>`,
+                                iconSize: [60, 20],
+                                iconAnchor: [30, 10]
+                            });
+                            L.marker(center, { icon: labelIcon, interactive: false }).addTo(labelLayerGroup);
+                        }
+                    } catch (e) { console.error(e); }
+                });
+            }
+            labelLayerGroup.addTo(map);
+        };
+
+        window.toggleLabels = function() {
+            window.updateLabels();
+        };
+
+        window.moveToOffice = function() {
+            var officeLat = 36.676550;
+            var officeLng = 137.019850;
+            if (!officeMarker) {
+                officeMarker = L.marker([officeLat, officeLng]).addTo(map).bindPopup("ファーム貞杉").openPopup();
+            } else {
+                officeMarker.setLatLng([officeLat, officeLng]);
+            }
+            map.setView([officeLat, officeLng], 19);
+        };
+
+        window.moveToCurrentLocation = function() {
+            if (!navigator.geolocation) { alert("このブラウザは位置情報取得に対応していません。"); return; }
+            navigator.geolocation.getCurrentPosition(
+                function (position) {
+                    var lat = position.coords.latitude;
+                    var lng = position.coords.longitude;
+                    var heading = position.coords.heading;
+                    var rotationStyle = (heading !== null && !isNaN(heading)) ? `transform: rotate(${heading}deg);` : '';
+                    var arrowIcon = L.divIcon({
+                        className: 'arrow-marker',
+                        html: `<div class="arrow-icon-inner" style="${rotationStyle}"></div>`,
+                        iconSize: [30, 30],
+                        iconAnchor: [15, 15]
+                    });
+                    if (!currentMarker) {
+                        currentMarker = L.marker([lat, lng], { icon: arrowIcon }).addTo(map).bindPopup("現在地").openPopup();
+                    } else {
+                        currentMarker.setIcon(arrowIcon);
+                        currentMarker.setLatLng([lat, lng]);
+                    }
+                    map.setView([lat, lng], 17);
+                },
+                function (error) { alert("現在地の取得に失敗しました: " + error.message); },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        };
     </script>
 </body>
 
