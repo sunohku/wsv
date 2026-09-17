@@ -108,7 +108,7 @@
         // ==========================================
         async function loadGeoJsonFromSupabase() {
             try {
-                const res = await fetch('https://wkrwvqqicurgmcsitsum.supabase.co/functions/v1/get-farms');
+                const res = await fetch('wkrwvgqicurgmcsitsum.supabase.co/functions/v1/get-farms');
                 if (!res.ok) throw new Error('ネットワーク応答が異常です');
                 
                 currentGeojsonObj = await res.json();
