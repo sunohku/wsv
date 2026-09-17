@@ -38,7 +38,8 @@
                 }).addTo(map);
 
                 // Edge FunctionからGeoJSON取得
-                const res = await fetch('https://wkrwvqqicurgmcsitsum.supabase.co/functions/v1/get-farms');
+                const res = await fetch('https://wkrwvgqicurgmcsitsum.supabase.co/functions/v1/get-farms');
+
                 const geojson = await res.json();
 
                 // GeoJSON描画
