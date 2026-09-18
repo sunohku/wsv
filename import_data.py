@@ -3,9 +3,11 @@ import pandas as pd
 import requests
 from supabase import create_client
 
-# ★ご自身のSupabaseプロジェクトのURLとキーに書き換えてください
-SUPABASE_URL = "https://your-project-id.supabase.co"
-SUPABASE_KEY = "your-service-role-or-anon-key"
+# c.html から分かった正しいプロジェクトURLを設定
+SUPABASE_URL = "https://wkrwvgqicurgmcsitsum.supabase.co"
+# SupabaseのAPIキー（設定画面の anon public または service_role キー）
+SUPABASE_KEY = "sb_publishable_enXIXvGovfpaS6QoceRYyA_6VDBUPag"
+
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # 国土地理院のジオコーディングAPIを使って住所から緯度経度を取得する関数
@@ -25,6 +27,8 @@ def get_latlon(address):
 excel_path = "米配達先.xlsx"
 df = pd.read_excel(excel_path, sheet_name="Sheet2")
 
+print("データ登録を開始します...")
+
 # 各行のデータを処理
 for index, row in df.iterrows():
     no = int(row["No"])
@@ -32,11 +36,9 @@ for index, row in df.iterrows():
     address = str(row["住所"]).strip()
     phone = str(row["電話番号"]) if pd.notna(row["電話番号"]) else None
     
-    # 住所に「富山県」を補うと検索ヒット率が上がります
+    # 住所に「富山県」を補う
     search_address = f"富山県{address}" if not address.startswith("富山県") else address
     lat, lon = get_latlon(search_address)
-    
-    print(f"[{no}] {name} ({search_address}) -> 緯度: {lat}, 経度: {lon}")
     
     record = {
         "no": no,
@@ -49,9 +51,10 @@ for index, row in df.iterrows():
     
     try:
         supabase.table("delivery_locations").insert(record).execute()
+        print(f"[{no}] {name} -> 登録成功！ (緯度: {lat}, 経度: {lon})")
     except Exception as e:
-        print(f"Insert error: {e}")
+        print(f"[{no}] {name} -> Insert error: {e}")
         
-    time.sleep(0.4) # APIに配慮して少しウェイト
+    time.sleep(0.3)
 
-print("すべてのデータの処理とSupabaseへの登録が完了しました！")
+print("すべての処理が完了しました！")
