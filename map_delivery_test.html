@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>配達先ピン表示テスト（Supabase連携）</title>
+
+    <!-- LeafletのCSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <style>
+        html,
+        body {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px;
+            border-radius: 6px;
+            box-shadow: 0 0 8px rgba(0, 0, 0, 0.3);
+            font-size: 13px;
+            font-family: sans-serif;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="controls">
+        <b>配達先ピン表示テスト</b><br>
+        <span id="status" style="color: #666;">データを読み込んでいます...</span>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Supabase公式JSライブラリ -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- LeafletのJS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // 1. 地図の初期化
+        var map = L.map('map', {
+            zoomControl: true,
+            tap: false
+        }).setView([36.747, 137.016], 13);
+
+        // 国土地理院の航空写真タイル
+        var gsiLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
+            attribution: "地理院タイル",
+            maxZoom: 18,
+            zIndex: 1
+        }).addTo(map);
+
+        var deliveryLayerGroup = L.layerGroup().addTo(map);
+
+        // 2. ページ読み込み時にSupabaseからデータを取得してピンを立てる
+        window.addEventListener('DOMContentLoaded', async () => {
+            await loadDeliveryLocations();
+        });
+
+        async function loadDeliveryLocations() {
+            const supabaseUrl = "https://wkrwvgqicurgmcsitsum.supabase.co";
+            const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indrcnd2Z3FpY3VyZ21jc2l0c3VtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwMzAzODgsImV4cCI6MjEwNDYwNjM4OH0.ySyHm-7v0cf0LKu_jcSwMrXUAoC67rz5vOcpEilgLZE";
+
+            // 公式クライアントの初期化
+            const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+
+            try {
+                // delivery_locations テーブルから全件取得
+                const { data: locations, error } = await supabaseClient
+                    .from('delivery_locations')
+                    .select('*');
+
+                if (error) throw error;
+
+                console.log("Supabaseから配達先データを取得しました。", locations);
+
+                let count = 0;
+                deliveryLayerGroup.clearLayers();
+
+                locations.forEach(loc => {
+                    if (loc.latitude && loc.longitude) {
+                        let marker = L.marker([loc.latitude, loc.longitude]);
+
+                        // 住所からGoogleマップのリンクを生成
+                        let mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc.address)}`;
+
+                        // 電話番号のリンク（データがある場合のみtelリンクにする）
+                        let phoneHtml = loc.phone ? `<a href="tel:${loc.phone}" style="color: #1976d2; text-decoration: none; font-weight: bold;">${loc.phone}</a>` : 'なし';
+
+                        let popupHtml = `
+            <div style="font-size: 13px; line-height: 1.6; min-width: 150px;">
+                <div><strong>No.</strong>：${loc.no ?? '-'}</div>
+                <div><strong>名前</strong>：${loc.name ?? '未入力'}様</div>
+                <div><strong>住所</strong>：<a href="${mapsUrl}" target="_blank" style="color: #1976d2; text-decoration: underline;">${loc.address ?? '-'}</a></div>
+                <div><strong>電話</strong>：${phoneHtml}</div>
+            </div>
+        `;
+                        marker.bindPopup(popupHtml);
+                        deliveryLayerGroup.addLayer(marker);
+                        count++;
+                    }
+                });
+
+                document.getElementById('status').innerHTML = `<span style="color: #2e7d32; font-weight: bold;">${count}件のピンを表示しました！</span>`;
+
+            } catch (err) {
+                console.error("データ読み込み失敗:", err);
+                document.getElementById('status').innerHTML = `<span style="color: #c62828; font-weight: bold;">エラーが発生しました（コンソール要確認）</span>`;
+            }
+        }
+    </script>
+</body>
+
+</html>
