@@ -140,7 +140,7 @@
                         <th>てんた</th>
                         <th>アルギ</th>
                         <th>その他</th>
-                        <th>電話・メモ</th>
+                        <th>連絡先・メモ</th>
                     </tr>
                 </thead>
                 <tbody id="list-table-body">
@@ -186,7 +186,7 @@
             isInitialLoading = false; // 初回ロード完了
         });
 
-        // ★【追加】地図の移動・拡大縮小が完了した時に自動で最新データを再読み込み
+        // 地図の移動・拡大縮小が完了した時に自動で最新データを再読み込み
         map.on('moveend', async () => {
             if (isInitialLoading) return;
             await loadDeliveryLocations();
@@ -224,6 +224,18 @@
                 }
 
                 if (loc.latitude && loc.longitude) {
+                    // 各お米の数量を確認（nullやundefinedの場合は0として扱う）
+                    let koshi = loc.koshihikari || 0;
+                    let fufu = loc.fufufu || 0;
+                    let tenta = loc.tentakaku || 0;
+                    let argit = loc.argit || 0;
+                    let other = loc.other_rice || 0;
+
+                    // すべて0の場合は地図に表示しない
+                    if (koshi === 0 && fufu === 0 && tenta === 0 && argit === 0 && other === 0) {
+                        return;
+                    }
+
                     let isCompleted = loc.status === '配達完了';
                     let markerClass = isCompleted ? 'tawara-marker completed' : 'tawara-marker';
                     
@@ -240,6 +252,7 @@
 
                     let mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loc.address || '')}`;
                     let phoneHtml = loc.phone ? `<a href="tel:${loc.phone}" style="color: #1976d2; font-weight: bold;">${loc.phone}</a>` : 'なし';
+                    let mobileHtml = loc.mobile ? `<a href="tel:${loc.mobile}" style="color: #1976d2; font-weight: bold;">${loc.mobile}</a>` : 'なし';
                     let statusColor = isCompleted ? '#1e88e5' : '#c62828';
 
                     let popupHtml = `
@@ -248,12 +261,13 @@
                             <div><strong>名前</strong>：${loc.name ?? '未入力'}</div>
                             <div><strong>住所</strong>：<a href="${mapsUrl}" target="_blank" style="color: #1976d2; text-decoration: underline;">${loc.address ?? '-'}</a></div>
                             <div><strong>電話</strong>：${phoneHtml}</div>
+                            <div><strong>スマホ</strong>：${mobileHtml}</div>
                             <div class="rice-group">
-                                <div>コシヒカリ: <strong>${loc.koshihikari ?? 0}</strong> 袋</div>
-                                <div>富富富: <strong>${loc.fufufu ?? 0}</strong> 袋</div>
-                                <div>てんたかく: <strong>${loc.tentakaku ?? 0}</strong> 袋</div>
-                                <div>アルギット: <strong>${loc.argit ?? 0}</strong> 袋</div>
-                                <div>その他: <strong>${loc.other_rice ?? 0}</strong> 袋</div>
+                                <div>コシヒカリ: <strong>${koshi}</strong> 袋</div>
+                                <div>富富富: <strong>${fufu}</strong> 袋</div>
+                                <div>てんたかく: <strong>${tenta}</strong> 袋</div>
+                                <div>アルギット: <strong>${argit}</strong> 袋</div>
+                                <div>その他: <strong>${other}</strong> 袋</div>
                             </div>
                             ${loc.memo ? `<div><strong>メモ:</strong> ${loc.memo}</div>` : ''}
                             <div style="margin-top: 8px; display: flex; gap: 4px;">
@@ -313,7 +327,8 @@
                     <td>${loc.argit || 0}</td>
                     <td>${loc.other_rice || 0}</td>
                     <td>
-                        ${loc.phone ? `<a href="tel:${loc.phone}">${loc.phone}</a><br>` : ''}
+                        ${loc.phone ? `固定: <a href="tel:${loc.phone}">${loc.phone}</a><br>` : ''}
+                        ${loc.mobile ? `スマホ: <a href="tel:${loc.mobile}">${loc.mobile}</a><br>` : ''}
                         <span style="font-size:10px; color:#555;">${loc.memo || ''}</span>
                         <div style="margin-top:4px;">
                             <button onclick="openEditForm(${loc.id})" style="background:#2196f3; color:white; border:none; padding:2px 6px; border-radius:3px; font-size:10px; cursor:pointer;">編集</button>
@@ -360,7 +375,7 @@
             renderMarkers();
         };
 
-        // 現在地へ移動（同時にデータ再読み込みも行う）
+        // 現在地へ移動
         window.moveToCurrentLocation = async function() {
             if (!navigator.geolocation) { alert('位置情報非対応です'); return; }
             if (isListView) toggleViewMode(); 
@@ -390,7 +405,8 @@
                     <b>新規追加（No. ${nextNo}）</b><br>
                     <div class="input-group" style="margin-top:4px;"><label>名前:</label><input type="text" id="newName" placeholder="お名前"></div>
                     <div class="input-group"><label>住所:</label><input type="text" id="newAddress" placeholder="住所"></div>
-                    <div class="input-group"><label>電話:</label><input type="text" id="newPhone" placeholder="電話番号"></div>
+                    <div class="input-group"><label>電話:</label><input type="text" id="newPhone" placeholder="固定電話"></div>
+                    <div class="input-group"><label>スマホ:</label><input type="text" id="newMobile" placeholder="携帯番号"></div>
                     <div class="rice-group">
                         <div class="input-group"><label>コシヒカリ:</label><input type="number" id="newKoshi" value="0" min="0"></div>
                         <div class="input-group"><label>富富富:</label><input type="number" id="newFufu" value="0" min="0"></div>
@@ -413,6 +429,7 @@
                     no: assignedNo, name: name, 
                     address: document.getElementById('newAddress').value, 
                     phone: document.getElementById('newPhone').value, 
+                    mobile: document.getElementById('newMobile').value, 
                     koshihikari: parseInt(document.getElementById('newKoshi').value) || 0,
                     fufufu: parseInt(document.getElementById('newFufu').value) || 0,
                     tentakaku: parseInt(document.getElementById('newTenta').value) || 0,
@@ -440,6 +457,7 @@
                         <div class="input-group" style="margin-top:4px;"><label>名前:</label><input type="text" id="editName" value="${data.name ?? ''}"></div>
                         <div class="input-group"><label>住所:</label><input type="text" id="editAddress" value="${data.address ?? ''}"></div>
                         <div class="input-group"><label>電話:</label><input type="text" id="editPhone" value="${data.phone ?? ''}"></div>
+                        <div class="input-group"><label>スマホ:</label><input type="text" id="editMobile" value="${data.mobile ?? ''}"></div>
                         <div class="rice-group">
                             <div class="input-group"><label>コシヒカリ:</label><input type="number" id="editKoshi" value="${data.koshihikari ?? 0}" min="0"></div>
                             <div class="input-group"><label>富富富:</label><input type="number" id="editFufu" value="${data.fufufu ?? 0}" min="0"></div>
@@ -469,6 +487,7 @@
                     name: name, 
                     address: document.getElementById('editAddress').value, 
                     phone: document.getElementById('editPhone').value, 
+                    mobile: document.getElementById('editMobile').value, 
                     koshihikari: parseInt(document.getElementById('editKoshi').value) || 0,
                     fufufu: parseInt(document.getElementById('editFufu').value) || 0,
                     tentakaku: parseInt(document.getElementById('editTenta').value) || 0,
