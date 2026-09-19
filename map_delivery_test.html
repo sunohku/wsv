@@ -43,7 +43,7 @@
             pointer-events: none;
         }
 
-        /* 【新規】一覧表画面のスタイル */
+        /* 一覧表画面のスタイル */
         #list-view-container {
             display: none; /* 初期状態は非表示 */
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -116,7 +116,7 @@
     <!-- 地図領域 -->
     <div id="map"></div>
 
-    <!-- 【新規】一覧表画面領域 -->
+    <!-- 一覧表画面領域 -->
     <div id="list-view-container">
         <div class="list-header">
             <h2 style="margin: 0; font-size: 18px; color: #2e7d32;">📊 配達数量・一覧表</h2>
@@ -179,15 +179,22 @@
         let displayMode = 'no'; 
         let isListView = false;
         let currentMarker = null; 
+        let isInitialLoading = true; // 初回ロード制御用フラグ
 
         window.addEventListener('DOMContentLoaded', async () => {
+            await loadDeliveryLocations();
+            isInitialLoading = false; // 初回ロード完了
+        });
+
+        // ★【追加】地図の移動・拡大縮小が完了した時に自動で最新データを再読み込み
+        map.on('moveend', async () => {
+            if (isInitialLoading) return;
             await loadDeliveryLocations();
         });
 
         // データの読み込み
         async function loadDeliveryLocations() {
             try {
-                // Noの昇順で取得するように修正
                 const { data: locations, error } = await supabaseClient
                     .from('delivery_locations')
                     .select('*')
@@ -220,7 +227,7 @@
                     let isCompleted = loc.status === '配達完了';
                     let markerClass = isCompleted ? 'tawara-marker completed' : 'tawara-marker';
                     
-                    let displayText = displayMode === 'no' ? (loc.no ?? '-') : (loc.name ? loc.name.substring(0, 4) + '様' : '未入力');
+                    let displayText = displayMode === 'no' ? (loc.no ?? '-') : (loc.name ? loc.name.substring(0, 4) : '未入力');
 
                     let tawaraIcon = L.divIcon({
                         className: '', 
@@ -238,7 +245,7 @@
                     let popupHtml = `
                         <div style="font-size: 13px; line-height: 1.5; min-width: 180px;">
                             <div><strong>No.</strong>：${loc.no ?? '-'} | <span style="color: ${statusColor}; font-weight: bold;">${loc.status ?? '未配達'}</span></div>
-                            <div><strong>名前</strong>：${loc.name ?? '未入力'}様</div>
+                            <div><strong>名前</strong>：${loc.name ?? '未入力'}</div>
                             <div><strong>住所</strong>：<a href="${mapsUrl}" target="_blank" style="color: #1976d2; text-decoration: underline;">${loc.address ?? '-'}</a></div>
                             <div><strong>電話</strong>：${phoneHtml}</div>
                             <div class="rice-group">
@@ -276,7 +283,7 @@
             document.getElementById('status').innerHTML = `<span style="color: #2e7d32; font-weight: bold;">${count}件表示中 (次No:${maxNo + 1})</span>`;
         }
 
-        // 【新規】一覧表を描画する関数
+        // 一覧表を描画する関数
         function renderListView() {
             let tbody = document.getElementById('list-table-body');
             tbody.innerHTML = '';
@@ -298,7 +305,7 @@
                 let tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td><b>${loc.no ?? '-'}</b></td>
-                    <td><b>${loc.name ?? '-'}様</b><br><span style="color:#666; font-size:10px;">${loc.address ?? ''}</span></td>
+                    <td><b>${loc.name ?? '-'}</b><br><span style="color:#666; font-size:10px;">${loc.address ?? ''}</span></td>
                     <td>${statusBadge}</td>
                     <td>${loc.koshihikari || 0}</td>
                     <td>${loc.fufufu || 0}</td>
@@ -341,7 +348,7 @@
             } else {
                 container.style.display = 'none';
                 label.innerText = '一覧表を表示';
-                map.invalidateSize(); // 地図の表示崩れ防止
+                map.invalidateSize(); 
             }
         };
 
@@ -353,10 +360,12 @@
             renderMarkers();
         };
 
-        // 現在地へ移動
-        window.moveToCurrentLocation = function() {
+        // 現在地へ移動（同時にデータ再読み込みも行う）
+        window.moveToCurrentLocation = async function() {
             if (!navigator.geolocation) { alert('位置情報非対応です'); return; }
-            if (isListView) toggleViewMode(); // 地図に戻す
+            if (isListView) toggleViewMode(); 
+
+            await loadDeliveryLocations();
 
             navigator.geolocation.getCurrentPosition((pos) => {
                 let lat = pos.coords.latitude, lng = pos.coords.longitude;
@@ -413,7 +422,7 @@
                     status: '未配達', latitude: lat, longitude: lng 
                 }]);
                 if (error) throw error;
-                alert(`No.${assignedNo} ${name}様を登録しました！`);
+                alert(`No.${assignedNo} ${name}を登録しました！`);
                 map.closePopup();
                 loadDeliveryLocations();
             } catch (err) { alert('登録失敗: ' + err.message); }
@@ -443,9 +452,8 @@
                     </div>
                 `;
                 if (isListView) {
-                    // リストからの編集時は一時的にポップアップ用のマーカー位置へジャンプまたは簡易処理
                     let marker = L.marker([data.latitude, data.longitude]).addTo(map).bindPopup(editHtml).openPopup();
-                    toggleViewMode(); // 地図に戻す
+                    toggleViewMode(); 
                 } else {
                     let marker = map._popup;
                     if (marker) marker.setContent(editHtml);
@@ -488,7 +496,7 @@
 
         // 削除
         window.deleteLocation = async function(id, name) {
-            if (!confirm(`${name}様のデータを削除しますか？`)) return;
+            if (!confirm(`${name}のデータを削除しますか？`)) return;
             try {
                 const { error } = await supabaseClient.from('delivery_locations').delete().eq('id', id);
                 if (error) throw error;
