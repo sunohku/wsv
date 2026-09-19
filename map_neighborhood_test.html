@@ -1,0 +1,163 @@
+ ３つ程、やり残した事があります！
+
+１．単純に今のデータだけをJavaScriptで描画してみる
+２．このデータを既存のデータとJOINする
+　map_delivery_test.htmlで扱っているテーブルがターゲット
+３．このシートでのマージはすべての名前を含んでいない
+　揺らぎを考慮していないと思う！！
+なので、平面直角座標の第７系を移動した…
+緯度経度に変換したであろう、テーブルの描画テスト
+いわゆる「単体テスト」をしてみたいと考えます。
+
+この「neighborhood_data」テーブルを描画するJavaScriptを出して下さい。
+よろしくおねがいします。 
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>自治会データ 手動位置調整・保存</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        #map {
+            width: 100%;
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            margin: 0;
+            font-family: sans-serif;
+        }
+        .name-label {
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #666;
+            padding: 2px 5px;
+            font-size: 12px;
+            font-weight: bold;
+            color: #333;
+            white-space: nowrap;
+            border-radius: 3px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .control-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            z-index: 1000;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <div class="control-panel">
+        <b>【手動位置調整モード】</b><br>
+        ピンをドラッグして動かすと自動保存されます<br>
+        <span id="status" style="font-size: 11px; color: #0275d8; font-weight: bold;">準備完了</span>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+        const SUPABASE_URL = "https://wkrwvgqicurgmcsitsum.supabase.co";
+        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indrcnd2Z3FpY3VyZ21jc2l0c3VtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4OTAzMDM4OCwiZXhwIjoyMTA0NjA2Mzg4fQ.Mo9wOX3Hm3OHH9y4PFOdwy7objpAoF6XzQHr1Co7vXM";
+
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        const map = L.map('map').setView([36.676862, 137.019646], 17);
+
+        var gsiLayer = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', {
+            attribution: "地理院タイル",
+            maxZoom: 18,
+            zIndex: 1
+        }).addTo(map);
+
+        async function loadNeighborhoodData() {
+            const statusEl = document.getElementById('status');
+            try {
+                const { data, error } = await supabaseClient
+                    .from('neighborhood_data')
+                    .select('*');
+
+                if (error) throw error;
+
+
+
+
+
+                data.forEach(row => {
+                    if (row.latitude && row.longitude) {
+                        const lat = parseFloat(row.latitude);
+                        const lon = parseFloat(row.longitude);
+
+                        const marker = L.marker([lat, lon], {
+                            draggable: true
+                        }).addTo(map);
+
+                        marker.bindTooltip(row.name, {
+                            permanent: true,
+                            direction: 'right',
+                            className: 'name-label'
+                        });
+
+                        marker.bindPopup(`
+                            <b>${row.name}</b><br>
+                            <span style="font-size:11px; color:blue;">ドラッグして離すと座標が更新されます</span>
+                        `);
+
+                        // ★ ピンを離した（ドラッグ終了）ときにSupabaseを更新
+                        marker.on('dragend', async function (event) {
+                            const newPos = event.target.getLatLng();
+                            statusEl.innerText = `${row.name} の座標を更新中...`;
+                            statusEl.style.color = "#f0ad4e";
+
+                            const { error: updateError } = await supabaseClient
+                                .from('neighborhood_data')
+                                .update({ 
+                                    latitude: newPos.lat, 
+                                    longitude: newPos.lng 
+                                })
+                                .eq('id', row.id);
+
+                            if (updateError) {
+                                console.error(`更新失敗 (${row.name}):`, updateError);
+                                statusEl.innerText = `${row.name} の更新に失敗しました`;
+                                statusEl.style.color = "#d9534f";
+                            } else {
+                                console.log(`【更新成功】${row.name}: 緯度=${newPos.lat}, 経度=${newPos.lng}`);
+                                statusEl.innerText = `${row.name} の座標を更新しました！`;
+                                statusEl.style.color = "#5cb85c";
+                            }
+                        });
+                    }
+                });
+
+                statusEl.innerText = "ピンをドラッグして位置を調整してください";
+
+            } catch (err) {
+                console.error("データ取得エラー:", err);
+                statusEl.innerText = "データ取得エラー";
+            }
+        }
+
+        loadNeighborhoodData();
+    </script>
+</body>
+</html>
